@@ -1,10 +1,13 @@
 {
-  "name": "laravel-p0",
+  "name": "rummykhan/cdk-app",
   "version": "0.1.0",
   "bin": {
-    "laravel-p0": "bin/laravel-p0.js"
+    "rummykhan/cdk-app": "bin/app.js"
   },
   "scripts": {
+    "clean": "find . -type f -name \"*.d.ts\" -delete && find . -type f -name \"*.js\" -delete",
+    "full-clean": "rm -rf node_modules dist build && rm -rf package-lock.json && npm run clean",
+    "clean-build": "npm run full-clean && npm install && npm run build",
     "build": "tsc",
     "watch": "tsc -w",
     "test": "jest",
