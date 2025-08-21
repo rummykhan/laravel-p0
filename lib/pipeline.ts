@@ -26,12 +26,12 @@ export default class Pipeline extends cdk.Stack {
       pipelineName: 'DevoWSPipeline',
       synth: new ShellStep('Synth', {
         input: cdkSource,
-        additionalInputs: {
-          'users-app': usersWebAppSource, // Include users app source in synth step
-        },
         commands: [
+          // Install CDK dependencies only
           'npm ci',
+          // Build CDK project only
           'npm run build',
+          // Synthesize CDK templates
           'npx cdk synth'
         ],
       }),
@@ -39,7 +39,7 @@ export default class Pipeline extends cdk.Stack {
       crossAccountKeys: true,
     });
 
-    // Add build step for the users web app
+    // Add build step for the users web app as a separate wave
     const usersBuildStep = new ShellStep('BuildUsersWebApp', {
       input: usersWebAppSource,
       commands: [
@@ -53,6 +53,19 @@ export default class Pipeline extends cdk.Stack {
       post: [usersBuildStep]
     });
 
-    const stageDeployment = pipeline.addStage(new BetaStage(this, "BetaStage", props));
+    // Deploy to all configured environments
+    PipelineConfig.stageAccounts.forEach((stageAccount) => {
+      const stageProps: cdk.StageProps = {
+        env: {
+          account: stageAccount.accountId,
+          region: stageAccount.region
+        }
+      };
+
+      // Create stage name based on stage type and environment
+      const stageName = `${stageAccount.stage.charAt(0).toUpperCase() + stageAccount.stage.slice(1)}Stage`;
+      
+      pipeline.addStage(new BetaStage(this, stageName, stageProps));
+    });
   }
 }

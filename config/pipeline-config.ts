@@ -1,4 +1,3 @@
-import * as cdk from "aws-cdk-lib";
 import {BetaAccount} from "./account-config"
 import {DeploymentStage, Stage} from "./types";
 import {CDK_APP_REPOSITORY, Repository, USERS_WEB_APP_REPOSITORY} from "./packages";
