@@ -6,9 +6,9 @@ export interface Repository {
   }
   
   export const CDK_APP_REPOSITORY: Repository = {
-    owner: `devo-ws`,
-    repository: `cdk-app`,
-    repoString: `devo-ws/cdk-app`,
+    owner: `rummykhan`,
+    repository: `laravel-p0`,
+    repoString: `rummykhan/laravel-p0`,
     branch: `main`,
   };
   
