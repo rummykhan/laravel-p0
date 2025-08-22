@@ -121,6 +121,56 @@ We fixed this by moving Tailwind CSS dependencies from `devDependencies` to `dep
 2. **Test production builds**: Use `npm ci` locally to test production-like dependency installation
 3. **Review PostCSS config**: Ensure all PostCSS plugins are available during build
 
+## Issue: TypeScript Dependencies Missing During Build
+
+### Problem
+```
+It looks like you're trying to use TypeScript but do not have the required package(s) installed.
+Please install typescript, @types/react, and @types/node by running:
+npm install --save-dev typescript @types/react @types/node
+```
+
+### Root Cause
+Next.js TypeScript projects require TypeScript and type definitions during the build process. When these dependencies are in `devDependencies`, they may not be available during production builds in CI/CD environments.
+
+### Solution Applied
+Move TypeScript and all type definition packages from `devDependencies` to `dependencies`:
+
+#### Before (Problematic):
+```json
+"dependencies": {
+  "react": "^19.0.0",
+  "react-dom": "^19.0.0",
+  "next": "15.3.4"
+},
+"devDependencies": {
+  "typescript": "^5",
+  "@types/node": "^20",
+  "@types/react": "^19",
+  "@types/react-dom": "^19"
+}
+```
+
+#### After (Fixed):
+```json
+"dependencies": {
+  "react": "^19.0.0",
+  "react-dom": "^19.0.0",
+  "next": "15.3.4",
+  "typescript": "^5",
+  "@types/node": "^20",
+  "@types/react": "^19",
+  "@types/react-dom": "^19"
+},
+"devDependencies": {
+}
+```
+
+### Prevention
+1. **TypeScript build dependencies**: For Next.js TypeScript projects, move TypeScript and type definitions to `dependencies`
+2. **Test with npm ci**: Always test builds with `npm ci` to simulate production dependency installation
+3. **Consider build requirements**: Any package needed during the build process should be in `dependencies`
+
 ## Issue: Build Timeout
 
 ### Problem
