@@ -20,41 +20,52 @@ This error occurs when TypeScript (`tsc`) is not available during the build proc
 ### Solution Applied
 We fixed this by:
 
-1. **Removed NODE_ENV=production from global environment**: This allows `npm ci` to install dev dependencies including TypeScript
-2. **Set NODE_ENV=production only for Next.js build**: Applied it specifically where needed for the Next.js production build
-3. **Added debugging information**: Added version checks and verification steps
+1. **Moved TypeScript to production dependencies**: Moved TypeScript from `devDependencies` to `dependencies` in package.json to ensure it's always available
+2. **Simplified pipeline commands**: Removed complex debugging and fallback logic
+3. **Ensured consistent environment**: TypeScript is now available regardless of NODE_ENV setting
 
 ### Code Changes Made
 
 #### Before (Problematic):
-```typescript
-env: {
-  'DOCKER_BUILDKIT': '1',
-  'NODE_ENV': 'production',  // This caused the issue
-  'DOCKER_CLI_EXPERIMENTAL': 'enabled',
+```json
+"devDependencies": {
+  "@types/jest": "^29.5.14",
+  "@types/node": "22.7.9",
+  "jest": "^29.7.0",
+  "ts-jest": "^29.2.5",
+  "aws-cdk": "2.1016.1",
+  "ts-node": "^10.9.2",
+  "typescript": "~5.6.3"  // TypeScript in devDependencies
+},
+"dependencies": {
+  "aws-cdk-lib": "2.196.0",
+  "constructs": "^10.0.0"
 }
 ```
 
 #### After (Fixed):
-```typescript
-env: {
-  'DOCKER_BUILDKIT': '1',
-  'DOCKER_CLI_EXPERIMENTAL': 'enabled',
-  // NODE_ENV removed from global env to allow dev dependencies
+```json
+"devDependencies": {
+  "@types/jest": "^29.5.14",
+  "@types/node": "22.7.9",
+  "jest": "^29.7.0",
+  "ts-jest": "^29.2.5",
+  "aws-cdk": "2.1016.1",
+  "ts-node": "^10.9.2"
+},
+"dependencies": {
+  "aws-cdk-lib": "2.196.0",
+  "constructs": "^10.0.0",
+  "typescript": "~5.6.3"  // TypeScript moved to dependencies
 }
-```
-
-And for Next.js build specifically:
-```bash
-'NODE_ENV=production npm run build',  # Applied only where needed
 ```
 
 ### Prevention
 To prevent this issue in the future:
 
-1. **Keep TypeScript in devDependencies**: This is the correct place for build tools
-2. **Don't set NODE_ENV=production globally**: Only set it for specific commands that need it
-3. **Use debugging commands**: The pipeline now includes version checks to help diagnose issues
+1. **Consider build tool dependencies carefully**: For CDK projects, TypeScript is essential for the build process and should be in `dependencies` if the build environment might skip dev dependencies
+2. **Test with npm ci**: Always test your build process with `npm ci` which mimics the production environment
+3. **Use consistent environments**: Ensure your local development environment matches the CI/CD environment
 
 ## Issue: Build Timeout
 

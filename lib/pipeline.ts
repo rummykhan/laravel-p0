@@ -30,15 +30,9 @@ export default class Pipeline extends cdk.Stack {
           'nextjs-users': usersWebAppSource,
         },
         commands: [
-          // Install CDK dependencies (including dev dependencies for TypeScript)
+          // Install CDK dependencies
           'echo "Installing CDK dependencies..."',
-          'echo "Node version: $(node --version)"',
-          'echo "NPM version: $(npm --version)"',
-          'echo "Current directory: $(pwd)"',
-          'echo "NODE_ENV: ${NODE_ENV:-not set}"',
           'npm ci',
-          'echo "Verifying TypeScript installation..."',
-          'npx tsc --version',
           
           // Build CDK project
           'echo "Building CDK project..."',
@@ -120,6 +114,10 @@ export default class Pipeline extends cdk.Stack {
       crossAccountKeys: true,
       // Add additional IAM permissions for ECR operations
       synthCodeBuildDefaults: {
+        buildEnvironment: {
+          buildImage: cdk.aws_codebuild.LinuxBuildImage.STANDARD_7_0,
+          computeType: cdk.aws_codebuild.ComputeType.SMALL,
+        },
         rolePolicy: [
           new cdk.aws_iam.PolicyStatement({
             effect: cdk.aws_iam.Effect.ALLOW,
