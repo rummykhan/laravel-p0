@@ -154,7 +154,7 @@ export class EcsStack extends cdk.Stack {
     public readonly cluster: ecs.Cluster;
     public readonly albSecurityGroup: ec2.SecurityGroup;
     public readonly ecsSecurityGroup: ec2.SecurityGroup;
-    public readonly ecrRepository: ecr.Repository;
+    public readonly ecrRepository: ecr.IRepository;
     public readonly applicationLoadBalancer: elbv2.ApplicationLoadBalancer;
     public readonly targetGroup: elbv2.ApplicationTargetGroup;
     public readonly taskDefinition: ecs.FargateTaskDefinition;
@@ -220,59 +220,11 @@ export class EcsStack extends cdk.Stack {
                 ecs.ContainerInsights.DISABLED,
         });
 
-        // Create ECR repository for container images
-        this.ecrRepository = new ecr.Repository(this, 'NextjsUsersRepository', {
-            repositoryName: 'nextjs-users',
-            // Configure lifecycle policies for image management
-            lifecycleRules: [
-                {
-                    // Keep only the latest 10 tagged images
-                    rulePriority: 1,
-                    description: 'Keep only the latest 10 tagged images',
-                    tagStatus: ecr.TagStatus.TAGGED,
-                    tagPrefixList: ['v', 'latest', 'main', 'develop'], // Common tag prefixes
-                    maxImageCount: 10,
-                },
-                {
-                    // Delete untagged images after 1 day
-                    rulePriority: 2,
-                    description: 'Delete untagged images after 1 day',
-                    tagStatus: ecr.TagStatus.UNTAGGED,
-                    maxImageAge: cdk.Duration.days(1),
-                },
-            ],
-            // Enable image scanning for security
-            imageScanOnPush: true,
-            // Remove repository when stack is deleted (for development)
-            removalPolicy: cdk.RemovalPolicy.DESTROY,
-        });
+        // Reference existing ECR repository created during synth step
+        this.ecrRepository = ecr.Repository.fromRepositoryName(this, 'NextjsUsersRepository', 'nextjs-users');
 
-        // Grant CodeBuild permissions to push images to ECR repository
-        // Create a role that CodeBuild can assume for ECR operations
-        const codeBuildRole = new iam.Role(this, 'CodeBuildEcrRole', {
-            assumedBy: new iam.ServicePrincipal('codebuild.amazonaws.com'),
-            description: 'Role for CodeBuild to access ECR repository',
-        });
-
-        // Grant the CodeBuild role permissions to push to ECR
-        this.ecrRepository.grantPullPush(codeBuildRole);
-
-        // Also grant ECR permissions to the CodeBuild service principal directly
-        // This allows any CodeBuild project to access this repository
-        this.ecrRepository.addToResourcePolicy(new iam.PolicyStatement({
-            effect: iam.Effect.ALLOW,
-            principals: [new iam.ServicePrincipal('codebuild.amazonaws.com')],
-            actions: [
-                'ecr:BatchCheckLayerAvailability',
-                'ecr:GetDownloadUrlForLayer',
-                'ecr:BatchGetImage',
-                'ecr:GetAuthorizationToken',
-                'ecr:PutImage',
-                'ecr:InitiateLayerUpload',
-                'ecr:UploadLayerPart',
-                'ecr:CompleteLayerUpload',
-            ],
-        }));
+        // Note: ECR repository is created and managed during the synth step
+        // CodeBuild permissions are handled by the pipeline's synthCodeBuildDefaults
 
         // Create security group for Application Load Balancer with least privilege access
         this.albSecurityGroup = new ec2.SecurityGroup(this, 'AlbSecurityGroup', {
@@ -467,7 +419,7 @@ export class EcsStack extends cdk.Stack {
             inlinePolicies: {
                 'TaskExecutionPolicy': new iam.PolicyDocument({
                     statements: [
-                        // ECR permissions for pulling images from this specific repository
+                        // ECR permissions for pulling images from the nextjs-users repository
                         new iam.PolicyStatement({
                             effect: iam.Effect.ALLOW,
                             actions: [
@@ -475,7 +427,7 @@ export class EcsStack extends cdk.Stack {
                                 'ecr:GetDownloadUrlForLayer',
                                 'ecr:BatchGetImage',
                             ],
-                            resources: [this.ecrRepository.repositoryArn],
+                            resources: [`arn:aws:ecr:${this.region}:${this.account}:repository/nextjs-users`],
                         }),
                         // ECR authorization token (required for all ECR operations)
                         new iam.PolicyStatement({
@@ -656,13 +608,13 @@ export class EcsStack extends cdk.Stack {
         });
 
         new cdk.CfnOutput(this, 'EcrRepositoryUri', {
-            value: this.ecrRepository.repositoryUri,
+            value: `${this.account}.dkr.ecr.${this.region}.amazonaws.com/nextjs-users`,
             description: 'ECR Repository URI for container images',
             exportName: `${this.stackName}-EcrRepositoryUri`,
         });
 
         new cdk.CfnOutput(this, 'EcrRepositoryName', {
-            value: this.ecrRepository.repositoryName,
+            value: 'nextjs-users',
             description: 'ECR Repository Name',
             exportName: `${this.stackName}-EcrRepositoryName`,
         });

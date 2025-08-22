@@ -37,7 +37,7 @@ export default class Pipeline extends cdk.Stack {
           'echo "Building CDK project..."',
           'npm run build',
           'echo "CDK build completed successfully"',
-          
+
           // Phase 2: Build and Push Next.js Application Docker Image
           'echo "=== Phase 2: Building Next.js Application ==="',
           'echo "Switching to Next.js application directory..."',
@@ -46,7 +46,7 @@ export default class Pipeline extends cdk.Stack {
           'npm ci',
           'echo "Building Next.js application for production..."',
           'NODE_ENV=production npm run build',
-          
+
           // Phase 3: Docker Image Build and Push
           'echo "=== Phase 3: Docker Image Build and Push ==="',
           'echo "Setting up AWS environment variables..."',
@@ -56,15 +56,15 @@ export default class Pipeline extends cdk.Stack {
           'echo "AWS Account ID: ${AWS_ACCOUNT_ID}"',
           'echo "AWS Region: ${AWS_DEFAULT_REGION}"',
           'echo "ECR Repository URI: ${ECR_REPOSITORY_URI}"',
-          
+
           // Login to ECR with error handling
           'echo "Logging into ECR..."',
           'aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com',
-          
+
           // Create ECR repository if it doesn't exist (will be handled by CDK, but this ensures it exists during build)
           'echo "Ensuring ECR repository exists..."',
           'aws ecr describe-repositories --repository-names nextjs-users --region ${AWS_DEFAULT_REGION} || aws ecr create-repository --repository-name nextjs-users --region ${AWS_DEFAULT_REGION}',
-          
+
           // Build Docker image with build timestamp as tag
           'echo "Building Docker image..."',
           'export IMAGE_TAG=$(date +%Y%m%d%H%M%S)',
@@ -75,33 +75,33 @@ export default class Pipeline extends cdk.Stack {
           'echo "Current directory: $(pwd)"',
           'echo "Directory contents:"',
           'ls -la',
-          
+
           // Build with multiple tags for better tracking and build args from config
           `docker build --build-arg NODE_ENV=${PipelineConfig.buildConfig.dockerBuildArgs.NODE_ENV} --build-arg NEXT_TELEMETRY_DISABLED=${PipelineConfig.buildConfig.dockerBuildArgs.NEXT_TELEMETRY_DISABLED} -t \${ECR_REPOSITORY_URI}:\${IMAGE_TAG} -t \${ECR_REPOSITORY_URI}:latest -t \${ECR_REPOSITORY_URI}:\${GIT_COMMIT_SHA} .`,
-          
+
           // Push Docker image to ECR with error handling
           'echo "Pushing Docker images to ECR..."',
           'docker push ${ECR_REPOSITORY_URI}:${IMAGE_TAG}',
           'docker push ${ECR_REPOSITORY_URI}:latest',
           'docker push ${ECR_REPOSITORY_URI}:${GIT_COMMIT_SHA}',
-          
+
           // Store image information for deployment
           'echo "Storing image information..."',
           'echo "${ECR_REPOSITORY_URI}:${IMAGE_TAG}" > ../image-uri.txt',
           'echo "${IMAGE_TAG}" > ../image-tag.txt',
           'echo "${GIT_COMMIT_SHA}" > ../git-commit.txt',
-          
+
           // Phase 4: Return to CDK and Synthesize
           'echo "=== Phase 4: CDK Template Synthesis ==="',
           'echo "Returning to CDK directory..."',
           'cd ..',
-          
+
           // Verify image information files
           'echo "Verifying Docker image information..."',
           'echo "Image URI: $(cat image-uri.txt)"',
           'echo "Image Tag: $(cat image-tag.txt)"',
           'echo "Git Commit: $(cat git-commit.txt)"',
-          
+
           // Synthesize CDK templates
           'echo "Synthesizing CDK CloudFormation templates..."',
           'npx cdk synth',
@@ -181,16 +181,16 @@ export default class Pipeline extends cdk.Stack {
           'export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)',
           `export AWS_DEFAULT_REGION=${stageAccount.region}`,
           'export ECR_REPOSITORY_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/nextjs-users',
-          
+
           // Set ECS service names based on stage
           `export CLUSTER_NAME=nextjs-users-cluster-${stageAccount.stage}`,
           `export SERVICE_NAME=nextjs-users-service-${stageAccount.stage}`,
-          
+
           'echo "AWS Account ID: ${AWS_ACCOUNT_ID}"',
           'echo "AWS Region: ${AWS_DEFAULT_REGION}"',
           'echo "ECS Cluster: ${CLUSTER_NAME}"',
           'echo "ECS Service: ${SERVICE_NAME}"',
-          
+
           // Check if service exists before updating
           'echo "Checking if ECS service exists..."',
           'if aws ecs describe-services --cluster ${CLUSTER_NAME} --services ${SERVICE_NAME} --region ${AWS_DEFAULT_REGION} --query "services[0].serviceName" --output text | grep -q "${SERVICE_NAME}"; then',
