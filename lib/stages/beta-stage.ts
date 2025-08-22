@@ -2,13 +2,20 @@ import * as cdk from 'aws-cdk-lib';
 import {Construct} from "constructs";
 import {DevStack} from "../stacks/dev-stack";
 import {EcsStack} from "../stacks/ecs-stack";
+import { ConfigurationResolver } from "../../config/configuration-resolver";
+import { ResolvedApplicationConfig } from "../../config/configuration-types";
 
 export class BetaStage extends cdk.Stage {
   public readonly devStack: DevStack;
   public readonly ecsStack: EcsStack;
+  public readonly resolvedConfiguration: ResolvedApplicationConfig;
 
   constructor(scope: Construct, id: string, props?: cdk.StageProps) {
     super(scope, id, props);
+
+    // Resolve configuration for the beta deployment stage
+    const configurationResolver = new ConfigurationResolver();
+    this.resolvedConfiguration = configurationResolver.resolveConfiguration('beta');
 
     // Create DevStack first (existing infrastructure)
     this.devStack = new DevStack(this, `DevStack`, {
@@ -16,12 +23,19 @@ export class BetaStage extends cdk.Stage {
       description: 'Development stack with existing resources',
     });
 
-    // Create EcsStack for containerized Next.js application deployment with stage-specific configuration
+    // Create EcsStack for containerized application deployment with resolved configuration
     this.ecsStack = new EcsStack(this, `EcsStack`, {
       ...props,
-      description: 'ECS Fargate stack for Next.js users application with ALB',
-      stage: 'beta', // Pass the stage for environment-specific configuration
+      description: `ECS Fargate stack for ${this.resolvedConfiguration.applicationDisplayName} with ALB`,
+      stage: 'beta',
+      applicationConfig: this.resolvedConfiguration, // Pass resolved configuration to ECS stack
     });
+
+    // Add stage-specific tags to all resources in this stage
+    cdk.Tags.of(this).add('Stage', 'beta');
+    cdk.Tags.of(this).add('Application', this.resolvedConfiguration.applicationName);
+    cdk.Tags.of(this).add('Environment', 'beta');
+    cdk.Tags.of(this).add('DeploymentType', 'ECS-Fargate');
 
     // Note: No explicit dependencies needed between DevStack and EcsStack
     // as they are independent infrastructure components

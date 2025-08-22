@@ -30,3 +30,6 @@ export interface DeploymentStage {
   region: string;
   accountId: string;
 }
+
+// Re-export configuration types for convenient access
+export * from './configuration-types';

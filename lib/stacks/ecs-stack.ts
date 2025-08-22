@@ -9,6 +9,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as applicationautoscaling from 'aws-cdk-lib/aws-applicationautoscaling';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import { getDeploymentConfig, validateDeploymentConfig } from '../../config/deployment-config';
+import { ResolvedApplicationConfig } from '../../config/configuration-types';
 
 // Environment-specific configuration interface
 export interface EcsEnvironmentConfig {
@@ -49,6 +50,8 @@ export interface EcsEnvironmentConfig {
 export interface EcsStackProps extends cdk.StackProps {
     environmentConfig?: EcsEnvironmentConfig;
     stage?: string;
+    /** Resolved application configuration with resource names */
+    applicationConfig?: ResolvedApplicationConfig;
 }
 
 // Default environment configurations
@@ -171,6 +174,12 @@ export class EcsStack extends cdk.Stack {
         const deploymentConfig = getDeploymentConfig(stage);
         const envConfig = props?.environmentConfig || deploymentConfig.ecsConfig;
 
+        // Get application configuration - use provided config or fall back to defaults
+        const appConfig = props?.applicationConfig;
+        if (!appConfig) {
+            throw new Error('Application configuration is required. Please provide a resolved application configuration.');
+        }
+
         // Validate the deployment configuration
         validateDeploymentConfig(deploymentConfig);
 
@@ -213,7 +222,7 @@ export class EcsStack extends cdk.Stack {
         // Create ECS Cluster with environment-specific configuration
         this.cluster = new ecs.Cluster(this, 'EcsCluster', {
             vpc: this.vpc,
-            clusterName: `nextjs-users-cluster-${stage}`,
+            clusterName: appConfig.resourceNames.clusterName,
             // Enable CloudWatch Container Insights based on deployment configuration
             containerInsightsV2: deploymentConfig.enableContainerInsights ?
                 ecs.ContainerInsights.ENABLED :
@@ -221,7 +230,7 @@ export class EcsStack extends cdk.Stack {
         });
 
         // Reference existing ECR repository created during synth step
-        this.ecrRepository = ecr.Repository.fromRepositoryName(this, 'NextjsUsersRepository', 'nextjs-users');
+        this.ecrRepository = ecr.Repository.fromRepositoryName(this, 'ApplicationRepository', appConfig.resourceNames.ecrRepositoryName);
 
         // Note: ECR repository is created and managed during the synth step
         // CodeBuild permissions are handled by the pipeline's synthCodeBuildDefaults
@@ -229,7 +238,8 @@ export class EcsStack extends cdk.Stack {
         // Create security group for Application Load Balancer with least privilege access
         this.albSecurityGroup = new ec2.SecurityGroup(this, 'AlbSecurityGroup', {
             vpc: this.vpc,
-            description: 'Security group for Application Load Balancer - least privilege access',
+            description: `Security group for ${appConfig.applicationDisplayName} Application Load Balancer - least privilege access`,
+            securityGroupName: appConfig.resourceNames.albSecurityGroupName,
             allowAllOutbound: false, // Explicitly define all egress rules for security
         });
 
@@ -250,15 +260,16 @@ export class EcsStack extends cdk.Stack {
         // Create security group for ECS tasks with strict least privilege access
         this.ecsSecurityGroup = new ec2.SecurityGroup(this, 'EcsSecurityGroup', {
             vpc: this.vpc,
-            description: 'Security group for ECS tasks - least privilege access',
+            description: `Security group for ${appConfig.applicationDisplayName} ECS tasks - least privilege access`,
+            securityGroupName: appConfig.resourceNames.ecsSecurityGroupName,
             allowAllOutbound: false, // Explicitly define all egress rules for security
         });
 
-        // Allow inbound traffic from ALB to ECS tasks on port 3000 ONLY
+        // Allow inbound traffic from ALB to ECS tasks on configured container port ONLY
         this.ecsSecurityGroup.addIngressRule(
             this.albSecurityGroup,
-            ec2.Port.tcp(3000),
-            'Allow traffic from ALB to ECS tasks on port 3000 only'
+            ec2.Port.tcp(appConfig.containerPort),
+            `Allow traffic from ALB to ECS tasks on port ${appConfig.containerPort} only`
         );
 
         // Allow outbound HTTPS traffic for ECS tasks to AWS services (ECR, CloudWatch, etc.)
@@ -291,11 +302,11 @@ export class EcsStack extends cdk.Stack {
             'Allow DNS resolution (TCP) for ECS tasks'
         );
 
-        // Allow outbound traffic from ALB to ECS tasks on port 3000 ONLY
+        // Allow outbound traffic from ALB to ECS tasks on configured container port ONLY
         this.albSecurityGroup.addEgressRule(
             this.ecsSecurityGroup,
-            ec2.Port.tcp(3000),
-            'Allow traffic from ALB to ECS tasks on port 3000 only'
+            ec2.Port.tcp(appConfig.containerPort),
+            `Allow traffic from ALB to ECS tasks on port ${appConfig.containerPort} only`
         );
 
         // Create VPC endpoints for enhanced security (simplified configuration)
@@ -341,10 +352,10 @@ export class EcsStack extends cdk.Stack {
         });
 
         // Create Application Load Balancer in public subnets
-        this.applicationLoadBalancer = new elbv2.ApplicationLoadBalancer(this, 'NextjsUsersAlb', {
+        this.applicationLoadBalancer = new elbv2.ApplicationLoadBalancer(this, 'ApplicationLoadBalancer', {
             vpc: this.vpc,
             internetFacing: true, // Internet-facing ALB for public access
-            loadBalancerName: 'nextjs-users-alb',
+            loadBalancerName: appConfig.resourceNames.albName,
             securityGroup: this.albSecurityGroup,
             // Place ALB in public subnets across multiple AZs
             vpcSubnets: {
@@ -354,22 +365,22 @@ export class EcsStack extends cdk.Stack {
             deletionProtection: false,
         });
 
-        // Create target group for ECS tasks on port 3000
-        this.targetGroup = new elbv2.ApplicationTargetGroup(this, 'NextjsUsersTargetGroup', {
+        // Create target group for ECS tasks on configured container port
+        this.targetGroup = new elbv2.ApplicationTargetGroup(this, 'ApplicationTargetGroup', {
             vpc: this.vpc,
-            port: 3000,
+            port: appConfig.containerPort,
             protocol: elbv2.ApplicationProtocol.HTTP,
             targetType: elbv2.TargetType.IP, // Required for Fargate tasks
-            targetGroupName: 'nextjs-users-tg',
+            targetGroupName: appConfig.resourceNames.targetGroupName,
             // Health check configuration for target group - aligned with container health check
             healthCheck: {
                 enabled: true,
-                path: '/api/health', // Health check endpoint path
-                port: '3000',
+                path: appConfig.healthCheckPath, // Health check endpoint path from config
+                port: appConfig.containerPort.toString(),
                 protocol: elbv2.Protocol.HTTP,
                 healthyHttpCodes: '200', // Consider 200 as healthy
                 interval: cdk.Duration.seconds(30), // Check every 30 seconds
-                timeout: cdk.Duration.seconds(15), // Increased timeout for Next.js startup
+                timeout: cdk.Duration.seconds(15), // Increased timeout for application startup
                 healthyThresholdCount: 2, // 2 consecutive successful checks = healthy
                 unhealthyThresholdCount: 3, // 3 consecutive failed checks = unhealthy
             },
@@ -386,22 +397,22 @@ export class EcsStack extends cdk.Stack {
         });
 
         // Create CloudWatch log groups for ECS tasks with environment-specific retention
-        const logGroup = new logs.LogGroup(this, 'NextjsUsersLogGroup', {
-            logGroupName: `/ecs/nextjs-users-${stage}`,
+        const logGroup = new logs.LogGroup(this, 'ApplicationLogGroup', {
+            logGroupName: appConfig.resourceNames.logGroupName,
             retention: envConfig.logRetention,
             removalPolicy: cdk.RemovalPolicy.DESTROY, // Remove log group when stack is deleted
         });
 
         // Create separate log group for ALB access logs (optional, for future use)
-        const albLogGroup = new logs.LogGroup(this, 'NextjsUsersAlbLogGroup', {
-            logGroupName: '/aws/applicationloadbalancer/nextjs-users',
+        const albLogGroup = new logs.LogGroup(this, 'ApplicationAlbLogGroup', {
+            logGroupName: `/aws/applicationloadbalancer/${appConfig.applicationName}`,
             retention: logs.RetentionDays.ONE_WEEK, // ALB logs can have shorter retention
             removalPolicy: cdk.RemovalPolicy.DESTROY,
         });
 
         // Create log group for ECS service events and deployment logs
-        const ecsServiceLogGroup = new logs.LogGroup(this, 'NextjsUsersServiceLogGroup', {
-            logGroupName: '/aws/ecs/service/nextjs-users',
+        const ecsServiceLogGroup = new logs.LogGroup(this, 'ApplicationServiceLogGroup', {
+            logGroupName: `/aws/ecs/service/${appConfig.applicationName}`,
             retention: logs.RetentionDays.ONE_MONTH, // Service events kept longer for troubleshooting
             removalPolicy: cdk.RemovalPolicy.DESTROY,
         });
@@ -419,7 +430,7 @@ export class EcsStack extends cdk.Stack {
             inlinePolicies: {
                 'TaskExecutionPolicy': new iam.PolicyDocument({
                     statements: [
-                        // ECR permissions for pulling images from the nextjs-users repository
+                        // ECR permissions for pulling images from the configured repository
                         new iam.PolicyStatement({
                             effect: iam.Effect.ALLOW,
                             actions: [
@@ -427,7 +438,7 @@ export class EcsStack extends cdk.Stack {
                                 'ecr:GetDownloadUrlForLayer',
                                 'ecr:BatchGetImage',
                             ],
-                            resources: [`arn:aws:ecr:${this.region}:${this.account}:repository/nextjs-users`],
+                            resources: [`arn:aws:ecr:${this.region}:${this.account}:repository/${appConfig.resourceNames.ecrRepositoryName}`],
                         }),
                         // ECR authorization token (required for all ECR operations)
                         new iam.PolicyStatement({
@@ -483,7 +494,7 @@ export class EcsStack extends cdk.Stack {
                             resources: ['*'], // CloudWatch metrics don't support resource-level permissions
                             conditions: {
                                 'StringEquals': {
-                                    'cloudwatch:namespace': 'NextJS/Users', // Restrict to specific namespace
+                                    'cloudwatch:namespace': `${appConfig.applicationName}/Metrics`, // Restrict to application-specific namespace
                                 },
                             },
                         }),
@@ -493,8 +504,8 @@ export class EcsStack extends cdk.Stack {
         });
 
         // Create Fargate task definition with environment-specific CPU and memory specifications
-        this.taskDefinition = new ecs.FargateTaskDefinition(this, 'NextjsUsersTaskDefinition', {
-            family: `nextjs-users-${stage}`,
+        this.taskDefinition = new ecs.FargateTaskDefinition(this, 'ApplicationTaskDefinition', {
+            family: appConfig.resourceNames.taskDefinitionFamily,
             // CPU units (1024 = 1 vCPU) - environment-specific
             cpu: envConfig.cpu,
             // Memory in MB - environment-specific
@@ -505,15 +516,15 @@ export class EcsStack extends cdk.Stack {
         });
 
         // Add container definition to task definition with environment-specific configuration
-        const container = this.taskDefinition.addContainer('nextjs-users-container', {
+        const container = this.taskDefinition.addContainer('application-container', {
             // Container name
-            containerName: `nextjs-users-${stage}`,
+            containerName: `${appConfig.applicationName}-${stage}`,
             // ECR image reference - will be updated by pipeline with specific tags
             image: ecs.ContainerImage.fromEcrRepository(this.ecrRepository, 'latest'),
             // Port mappings - only expose necessary ports
             portMappings: [
                 {
-                    containerPort: 3000,
+                    containerPort: appConfig.containerPort,
                     protocol: ecs.Protocol.TCP,
                     name: 'http',
                     appProtocol: ecs.AppProtocol.http, // Specify application protocol for better routing
@@ -522,7 +533,7 @@ export class EcsStack extends cdk.Stack {
             // CloudWatch logging configuration with enhanced security
             logging: ecs.LogDrivers.awsLogs({
                 logGroup: logGroup,
-                streamPrefix: `nextjs-users-${stage}`,
+                streamPrefix: `${appConfig.applicationName}-${stage}`,
             }),
             // Environment variables for Next.js application - environment-specific
             environment: {
@@ -606,13 +617,13 @@ export class EcsStack extends cdk.Stack {
         });
 
         new cdk.CfnOutput(this, 'EcrRepositoryUri', {
-            value: `${this.account}.dkr.ecr.${this.region}.amazonaws.com/nextjs-users`,
+            value: `${this.account}.dkr.ecr.${this.region}.amazonaws.com/${appConfig.resourceNames.ecrRepositoryName}`,
             description: 'ECR Repository URI for container images',
             exportName: `${this.stackName}-EcrRepositoryUri`,
         });
 
         new cdk.CfnOutput(this, 'EcrRepositoryName', {
-            value: 'nextjs-users',
+            value: appConfig.resourceNames.ecrRepositoryName,
             description: 'ECR Repository Name',
             exportName: `${this.stackName}-EcrRepositoryName`,
         });
@@ -673,10 +684,10 @@ export class EcsStack extends cdk.Stack {
         });
 
         // Create ECS service with environment-specific deployment configuration
-        this.ecsService = new ecs.FargateService(this, 'NextjsUsersService', {
+        this.ecsService = new ecs.FargateService(this, 'ApplicationService', {
             cluster: this.cluster,
             taskDefinition: this.taskDefinition,
-            serviceName: `nextjs-users-service-${stage}`,
+            serviceName: appConfig.resourceNames.serviceName,
             // Environment-specific desired count for high availability
             desiredCount: envConfig.desiredCount,
             // Configure service to use private subnets for security
@@ -726,7 +737,7 @@ export class EcsStack extends cdk.Stack {
             targetUtilizationPercent: envConfig.targetCpuUtilization, // Environment-specific target CPU utilization
             scaleInCooldown: envConfig.scaleInCooldown, // Environment-specific cooldown for scale-in
             scaleOutCooldown: envConfig.scaleOutCooldown, // Environment-specific cooldown for scale-out
-            policyName: `nextjs-users-cpu-scaling-policy-${stage}`,
+            policyName: `${appConfig.applicationName}-cpu-scaling-policy-${stage}`,
         });
 
         // Add memory-based scaling policy for better resource management
@@ -734,15 +745,15 @@ export class EcsStack extends cdk.Stack {
             targetUtilizationPercent: envConfig.targetCpuUtilization + 10, // Slightly higher threshold for memory
             scaleInCooldown: envConfig.scaleInCooldown,
             scaleOutCooldown: envConfig.scaleOutCooldown,
-            policyName: `nextjs-users-memory-scaling-policy-${stage}`,
+            policyName: `${appConfig.applicationName}-memory-scaling-policy-${stage}`,
         });
 
         // Add CloudWatch alarms for scaling triggers with environment-specific configuration
         if (deploymentConfig.enableDetailedMonitoring) {
             // High CPU utilization alarm
             const highCpuAlarm = new cloudwatch.Alarm(this, 'HighCpuAlarm', {
-                alarmName: `nextjs-users-high-cpu-${stage}`,
-                alarmDescription: `Alarm when CPU utilization is high for ${stage} environment`,
+                alarmName: `${appConfig.applicationName}-high-cpu-${stage}`,
+                alarmDescription: `Alarm when CPU utilization is high for ${appConfig.applicationDisplayName} ${stage} environment`,
                 metric: this.ecsService.metricCpuUtilization({
                     period: cdk.Duration.minutes(5),
                     statistic: cloudwatch.Stats.AVERAGE,
@@ -754,8 +765,8 @@ export class EcsStack extends cdk.Stack {
 
             // High memory utilization alarm
             const highMemoryAlarm = new cloudwatch.Alarm(this, 'HighMemoryAlarm', {
-                alarmName: `nextjs-users-high-memory-${stage}`,
-                alarmDescription: `Alarm when memory utilization is high for ${stage} environment`,
+                alarmName: `${appConfig.applicationName}-high-memory-${stage}`,
+                alarmDescription: `Alarm when memory utilization is high for ${appConfig.applicationDisplayName} ${stage} environment`,
                 metric: this.ecsService.metricMemoryUtilization({
                     period: cdk.Duration.minutes(5),
                     statistic: cloudwatch.Stats.AVERAGE,
@@ -767,8 +778,8 @@ export class EcsStack extends cdk.Stack {
 
             // Service task count alarm (for availability monitoring)
             const lowTaskCountAlarm = new cloudwatch.Alarm(this, 'LowTaskCountAlarm', {
-                alarmName: `nextjs-users-low-task-count-${stage}`,
-                alarmDescription: `Alarm when running task count is below minimum for ${stage} environment`,
+                alarmName: `${appConfig.applicationName}-low-task-count-${stage}`,
+                alarmDescription: `Alarm when running task count is below minimum for ${appConfig.applicationDisplayName} ${stage} environment`,
                 metric: new cloudwatch.Metric({
                     namespace: 'AWS/ECS',
                     metricName: 'RunningTaskCount',
@@ -787,8 +798,8 @@ export class EcsStack extends cdk.Stack {
 
             // ALB target health alarm
             const unhealthyTargetsAlarm = new cloudwatch.Alarm(this, 'UnhealthyTargetsAlarm', {
-                alarmName: `nextjs-users-unhealthy-targets-${stage}`,
-                alarmDescription: `Alarm when ALB has unhealthy targets for ${stage} environment`,
+                alarmName: `${appConfig.applicationName}-unhealthy-targets-${stage}`,
+                alarmDescription: `Alarm when ALB has unhealthy targets for ${appConfig.applicationDisplayName} ${stage} environment`,
                 metric: this.targetGroup.metrics.unhealthyHostCount({
                     period: cdk.Duration.minutes(1),
                     statistic: cloudwatch.Stats.AVERAGE,
@@ -814,8 +825,8 @@ export class EcsStack extends cdk.Stack {
         }
 
         // Create CloudWatch Dashboard for service health monitoring
-        const dashboard = new cloudwatch.Dashboard(this, 'NextjsUsersDashboard', {
-            dashboardName: 'nextjs-users-service-health',
+        const dashboard = new cloudwatch.Dashboard(this, 'ApplicationDashboard', {
+            dashboardName: `${appConfig.applicationName}-service-health`,
             defaultInterval: cdk.Duration.hours(1), // Default time range: 1 hour
         });
 
