@@ -173,73 +173,8 @@ export default class Pipeline extends cdk.Stack {
       // Add the stage to the pipeline
       const stageDeployment = pipeline.addStage(betaStage);
 
-      // Add post-deployment step to update ECS service with new Docker image
-      stageDeployment.addPost(new ShellStep('UpdateECSService', {
-        commands: [
-          // Get the current AWS account and region
-          'echo "Setting up environment for ECS service update..."',
-          'export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)',
-          `export AWS_DEFAULT_REGION=${stageAccount.region}`,
-          'export ECR_REPOSITORY_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/nextjs-users',
-
-          // Set ECS service names based on stage
-          `export CLUSTER_NAME=nextjs-users-cluster-${stageAccount.stage}`,
-          `export SERVICE_NAME=nextjs-users-service-${stageAccount.stage}`,
-
-          'echo "AWS Account ID: ${AWS_ACCOUNT_ID}"',
-          'echo "AWS Region: ${AWS_DEFAULT_REGION}"',
-          'echo "ECS Cluster: ${CLUSTER_NAME}"',
-          'echo "ECS Service: ${SERVICE_NAME}"',
-
-          // Check if service exists before updating
-          'echo "Checking if ECS service exists..."',
-          'if aws ecs describe-services --cluster ${CLUSTER_NAME} --services ${SERVICE_NAME} --region ${AWS_DEFAULT_REGION} --query "services[0].serviceName" --output text | grep -q "${SERVICE_NAME}"; then',
-          '  echo "ECS service found, proceeding with update..."',
-          '  ',
-          '  # Get current service status before update',
-          '  echo "Current service status:"',
-          '  aws ecs describe-services --cluster ${CLUSTER_NAME} --services ${SERVICE_NAME} --region ${AWS_DEFAULT_REGION} --query "services[0].{ServiceName:serviceName,Status:status,RunningCount:runningCount,DesiredCount:desiredCount,TaskDefinition:taskDefinition}" --output table',
-          '  ',
-          '  # Force new deployment to pick up the latest image',
-          '  echo "Triggering ECS service deployment..."',
-          '  DEPLOYMENT_ID=$(aws ecs update-service --cluster ${CLUSTER_NAME} --service ${SERVICE_NAME} --force-new-deployment --region ${AWS_DEFAULT_REGION} --query "service.deployments[0].id" --output text)',
-          '  echo "Deployment ID: ${DEPLOYMENT_ID}"',
-          '  ',
-          '  # Wait for deployment to complete with timeout',
-          '  echo "Waiting for deployment to complete (this may take several minutes)..."',
-          '  if timeout 900 aws ecs wait services-stable --cluster ${CLUSTER_NAME} --services ${SERVICE_NAME} --region ${AWS_DEFAULT_REGION}; then',
-          '    echo "Deployment completed successfully!"',
-          '  else',
-          '    echo "Deployment timed out or failed. Checking current status..."',
-          '    aws ecs describe-services --cluster ${CLUSTER_NAME} --services ${SERVICE_NAME} --region ${AWS_DEFAULT_REGION} --query "services[0].deployments[*].{Status:status,TaskDefinition:taskDefinition,RunningCount:runningCount,DesiredCount:desiredCount,CreatedAt:createdAt}" --output table',
-          '    exit 1',
-          '  fi',
-          '  ',
-          '  # Get the final service status',
-          '  echo "Final service status:"',
-          '  aws ecs describe-services --cluster ${CLUSTER_NAME} --services ${SERVICE_NAME} --region ${AWS_DEFAULT_REGION} --query "services[0].deployments[?status==\'PRIMARY\'].{Status:status,TaskDefinition:taskDefinition,RunningCount:runningCount,DesiredCount:desiredCount,CreatedAt:createdAt}" --output table',
-          '  ',
-          '  # Get the load balancer URL',
-          '  echo "Getting load balancer URL..."',
-          '  ALB_DNS=$(aws elbv2 describe-load-balancers --region ${AWS_DEFAULT_REGION} --query "LoadBalancers[?contains(LoadBalancerName, \'nextjs-users\')].DNSName" --output text)',
-          '  if [ ! -z "${ALB_DNS}" ]; then',
-          '    echo "Application is available at: http://${ALB_DNS}"',
-          '    echo "Health check endpoint: http://${ALB_DNS}/api/health"',
-          '  else',
-          '    echo "Warning: Could not retrieve load balancer DNS name"',
-          '  fi',
-          '  ',
-          'else',
-          '  echo "ECS service not found. This might be the first deployment."',
-          '  echo "The service should be created by the CDK deployment."',
-          '  ',
-          '  # List available services for debugging',
-          '  echo "Available ECS services in cluster:"',
-          '  aws ecs list-services --cluster ${CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --query "serviceArns" --output table || echo "Cluster may not exist yet"',
-          'fi',
-        ],
-        // Note: ECS permissions are handled by the pipeline's default role
-      }));
+      // CDK automatically handles ECS service updates when task definition changes
+      // No additional post-deployment step needed
     });
   }
 }
