@@ -361,7 +361,7 @@ export class EcsStack extends cdk.Stack {
             protocol: elbv2.ApplicationProtocol.HTTP,
             targetType: elbv2.TargetType.IP, // Required for Fargate tasks
             targetGroupName: 'nextjs-users-tg',
-            // Health check configuration for target group
+            // Health check configuration for target group - aligned with container health check
             healthCheck: {
                 enabled: true,
                 path: '/api/health', // Health check endpoint path
@@ -369,7 +369,7 @@ export class EcsStack extends cdk.Stack {
                 protocol: elbv2.Protocol.HTTP,
                 healthyHttpCodes: '200', // Consider 200 as healthy
                 interval: cdk.Duration.seconds(30), // Check every 30 seconds
-                timeout: cdk.Duration.seconds(5), // 5 second timeout
+                timeout: cdk.Duration.seconds(15), // Increased timeout for Next.js startup
                 healthyThresholdCount: 2, // 2 consecutive successful checks = healthy
                 unhealthyThresholdCount: 3, // 3 consecutive failed checks = unhealthy
             },
@@ -532,18 +532,17 @@ export class EcsStack extends cdk.Stack {
                 // Add timestamp for deployment tracking
                 DEPLOYMENT_TIMESTAMP: new Date().toISOString(),
             },
-            // Health check configuration with security considerations
-            healthCheck: {
-                command: [
-                    'CMD-SHELL',
-                    // Use wget instead of curl for smaller attack surface (if available in container)
-                    'wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1'
-                ],
-                interval: cdk.Duration.seconds(30),
-                timeout: cdk.Duration.seconds(5),
-                retries: 3,
-                startPeriod: cdk.Duration.seconds(60), // Give app time to start
-            },
+            // Health check configuration - temporarily disabled to rely on ALB health check only
+            // healthCheck: {
+            //     command: [
+            //         'CMD-SHELL',
+            //         'curl -f --connect-timeout 3 --max-time 5 http://127.0.0.1:3000/api/health || exit 1'
+            //     ],
+            //     interval: cdk.Duration.seconds(30),
+            //     timeout: cdk.Duration.seconds(15),
+            //     retries: 3,
+            //     startPeriod: cdk.Duration.seconds(180),
+            // },
             // Essential container - if this fails, the task stops
             essential: true,
             // Security configurations

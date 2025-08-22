@@ -34,7 +34,7 @@ export const DeploymentConfigs: { [stage: string]: DeploymentConfig } = {
       // Deployment configuration for zero-downtime updates
       maxHealthyPercent: 200, // Allow double capacity during deployment
       minHealthyPercent: 50, // Keep at least half running
-      healthCheckGracePeriod: cdk.Duration.seconds(60),
+      healthCheckGracePeriod: cdk.Duration.seconds(120), // Increased to allow container health check to stabilize
       
       // Circuit breaker configuration for automatic rollback
       circuitBreakerEnabled: true,
@@ -42,7 +42,7 @@ export const DeploymentConfigs: { [stage: string]: DeploymentConfig } = {
       
       // Environment variables for Next.js application
       environmentVariables: {
-        NODE_ENV: 'development',
+        NODE_ENV: 'production', // Use production mode for optimized builds even in beta
         PORT: '3000',
         LOG_LEVEL: 'debug',
         SECURITY_HEADERS_ENABLED: 'true',
@@ -50,6 +50,8 @@ export const DeploymentConfigs: { [stage: string]: DeploymentConfig } = {
         ENABLE_DEBUG_LOGGING: 'true',
         // Performance monitoring disabled for development
         ENABLE_PERFORMANCE_MONITORING: 'false',
+        // Add beta-specific identifier
+        DEPLOYMENT_ENV: 'beta',
       },
       
       // Logging configuration
@@ -92,7 +94,7 @@ export const DeploymentConfigs: { [stage: string]: DeploymentConfig } = {
       
       // Environment variables for staging
       environmentVariables: {
-        NODE_ENV: 'staging',
+        NODE_ENV: 'production', // Use production mode for optimized builds
         PORT: '3000',
         LOG_LEVEL: 'info',
         SECURITY_HEADERS_ENABLED: 'true',
@@ -100,6 +102,7 @@ export const DeploymentConfigs: { [stage: string]: DeploymentConfig } = {
         ENABLE_PERFORMANCE_MONITORING: 'true',
         // Staging-specific configurations
         ENABLE_DEBUG_LOGGING: 'false',
+        DEPLOYMENT_ENV: 'gamma',
       },
       
       // Logging configuration
@@ -152,6 +155,7 @@ export const DeploymentConfigs: { [stage: string]: DeploymentConfig } = {
         // Production-specific optimizations
         NEXT_OPTIMIZE_FONTS: 'true',
         NEXT_OPTIMIZE_IMAGES: 'true',
+        DEPLOYMENT_ENV: 'production',
       },
       
       // Logging configuration
