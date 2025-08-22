@@ -559,8 +559,7 @@ export class EcsStack extends cdk.Stack {
             linuxParameters: new ecs.LinuxParameters(this, 'LinuxParameters', {
                 // Initialize process to handle signals properly
                 initProcessEnabled: true,
-                // Shared memory size limit
-                sharedMemorySize: 64, // MB - minimal for Next.js
+                // Note: sharedMemorySize is not supported for Fargate tasks
             }),
         });
 
