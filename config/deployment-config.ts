@@ -170,7 +170,6 @@ export const DeploymentConfigs: { [stage: string]: DeploymentConfig } = {
 export function getDeploymentConfig(stage: string): DeploymentConfig {
   const config = DeploymentConfigs[stage.toLowerCase()];
   if (!config) {
-    console.warn(`No deployment configuration found for stage: ${stage}, using beta configuration`);
     return DeploymentConfigs.beta;
   }
   return config;
