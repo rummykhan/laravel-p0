@@ -30,9 +30,15 @@ export default class Pipeline extends cdk.Stack {
           'nextjs-users': usersWebAppSource,
         },
         commands: [
-          // Install CDK dependencies
+          // Install CDK dependencies (including dev dependencies for TypeScript)
           'echo "Installing CDK dependencies..."',
+          'echo "Node version: $(node --version)"',
+          'echo "NPM version: $(npm --version)"',
+          'echo "Current directory: $(pwd)"',
+          'echo "NODE_ENV: ${NODE_ENV:-not set}"',
           'npm ci',
+          'echo "Verifying TypeScript installation..."',
+          'npx tsc --version',
           
           // Build CDK project
           'echo "Building CDK project..."',
@@ -42,7 +48,7 @@ export default class Pipeline extends cdk.Stack {
           'echo "Building Next.js application..."',
           'cd nextjs-users',
           'npm ci',
-          'npm run build',
+          'NODE_ENV=production npm run build',
           
           // Get AWS account ID and region for ECR
           'echo "Setting up AWS environment variables..."',
@@ -67,6 +73,10 @@ export default class Pipeline extends cdk.Stack {
           'export GIT_COMMIT_SHA=${CODEBUILD_RESOLVED_SOURCE_VERSION:-$(git rev-parse --short HEAD)}',
           'echo "Image tag: ${IMAGE_TAG}"',
           'echo "Git commit: ${GIT_COMMIT_SHA}"',
+          'echo "Docker version: $(docker --version)"',
+          'echo "Current directory: $(pwd)"',
+          'echo "Directory contents:"',
+          'ls -la',
           
           // Build with multiple tags for better tracking and build args from config
           `docker build --build-arg NODE_ENV=${PipelineConfig.buildConfig.dockerBuildArgs.NODE_ENV} --build-arg NEXT_TELEMETRY_DISABLED=${PipelineConfig.buildConfig.dockerBuildArgs.NEXT_TELEMETRY_DISABLED} -t \${ECR_REPOSITORY_URI}:\${IMAGE_TAG} -t \${ECR_REPOSITORY_URI}:latest -t \${ECR_REPOSITORY_URI}:\${GIT_COMMIT_SHA} .`,
@@ -98,10 +108,9 @@ export default class Pipeline extends cdk.Stack {
         env: {
           // Enable Docker buildkit for better performance
           'DOCKER_BUILDKIT': '1',
-          // Set Node.js environment
-          'NODE_ENV': 'production',
           // Enable Docker CLI experimental features
           'DOCKER_CLI_EXPERIMENTAL': 'enabled',
+          // Note: NODE_ENV is not set here to allow dev dependencies installation for CDK build
         },
         // Note: ECR permissions are handled by the pipeline's default role
       }),
