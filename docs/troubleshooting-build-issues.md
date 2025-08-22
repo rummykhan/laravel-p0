@@ -67,6 +67,60 @@ To prevent this issue in the future:
 2. **Test with npm ci**: Always test your build process with `npm ci` which mimics the production environment
 3. **Use consistent environments**: Ensure your local development environment matches the CI/CD environment
 
+## Issue: "Cannot find module '@tailwindcss/postcss'" Error
+
+### Problem
+```
+Error: Cannot find module '@tailwindcss/postcss'
+Require stack:
+- /codebuild/output/src2217/src/s3/01/node_modules/next/dist/build/webpack/config/blocks/css/plugins.js
+```
+
+### Root Cause
+This error occurs when Tailwind CSS dependencies are in `devDependencies` but not available during the production build process. When `npm ci` runs in the CodeBuild environment, it may skip dev dependencies, causing the Tailwind PostCSS plugin to be unavailable.
+
+### Solution Applied
+We fixed this by moving Tailwind CSS dependencies from `devDependencies` to `dependencies` in the Next.js application's package.json:
+
+#### Before (Problematic):
+```json
+"dependencies": {
+  "react": "^19.0.0",
+  "react-dom": "^19.0.0",
+  "next": "15.3.4"
+},
+"devDependencies": {
+  "typescript": "^5",
+  "@types/node": "^20",
+  "@types/react": "^19",
+  "@types/react-dom": "^19",
+  "@tailwindcss/postcss": "^4",  // Problem: in devDependencies
+  "tailwindcss": "^4"            // Problem: in devDependencies
+}
+```
+
+#### After (Fixed):
+```json
+"dependencies": {
+  "react": "^19.0.0",
+  "react-dom": "^19.0.0",
+  "next": "15.3.4",
+  "@tailwindcss/postcss": "^4",  // Moved to dependencies
+  "tailwindcss": "^4"            // Moved to dependencies
+},
+"devDependencies": {
+  "typescript": "^5",
+  "@types/node": "^20",
+  "@types/react": "^19",
+  "@types/react-dom": "^19"
+}
+```
+
+### Prevention
+1. **CSS framework dependencies**: Always put CSS framework dependencies in `dependencies` if they're required for the build process
+2. **Test production builds**: Use `npm ci` locally to test production-like dependency installation
+3. **Review PostCSS config**: Ensure all PostCSS plugins are available during build
+
 ## Issue: Build Timeout
 
 ### Problem
