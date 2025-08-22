@@ -30,21 +30,25 @@ export default class Pipeline extends cdk.Stack {
           'nextjs-users': usersWebAppSource,
         },
         commands: [
-          // Install CDK dependencies
+          // Phase 1: Build CDK Infrastructure Code
+          'echo "=== Phase 1: Building CDK Infrastructure ==="',
           'echo "Installing CDK dependencies..."',
           'npm ci',
-          
-          // Build CDK project
           'echo "Building CDK project..."',
           'npm run build',
+          'echo "CDK build completed successfully"',
           
-          // Build and push Docker image for Next.js application
-          'echo "Building Next.js application..."',
+          // Phase 2: Build and Push Next.js Application Docker Image
+          'echo "=== Phase 2: Building Next.js Application ==="',
+          'echo "Switching to Next.js application directory..."',
           'cd nextjs-users',
+          'echo "Installing Next.js dependencies..."',
           'npm ci',
+          'echo "Building Next.js application for production..."',
           'NODE_ENV=production npm run build',
           
-          // Get AWS account ID and region for ECR
+          // Phase 3: Docker Image Build and Push
+          'echo "=== Phase 3: Docker Image Build and Push ==="',
           'echo "Setting up AWS environment variables..."',
           'export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)',
           'export AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}',
@@ -87,17 +91,21 @@ export default class Pipeline extends cdk.Stack {
           'echo "${IMAGE_TAG}" > ../image-tag.txt',
           'echo "${GIT_COMMIT_SHA}" > ../git-commit.txt',
           
-          // Return to CDK directory
+          // Phase 4: Return to CDK and Synthesize
+          'echo "=== Phase 4: CDK Template Synthesis ==="',
+          'echo "Returning to CDK directory..."',
           'cd ..',
           
           // Verify image information files
+          'echo "Verifying Docker image information..."',
           'echo "Image URI: $(cat image-uri.txt)"',
           'echo "Image Tag: $(cat image-tag.txt)"',
           'echo "Git Commit: $(cat git-commit.txt)"',
           
           // Synthesize CDK templates
-          'echo "Synthesizing CDK templates..."',
-          'npx cdk synth'
+          'echo "Synthesizing CDK CloudFormation templates..."',
+          'npx cdk synth',
+          'echo "=== Build Process Completed Successfully ==="'
         ],
         env: {
           // Enable Docker buildkit for better performance
