@@ -423,11 +423,11 @@ export class EcsStack extends cdk.Stack {
             healthCheck: {
                 command: [
                     'CMD-SHELL',
-                    `curl -f --connect-timeout 3 --max-time 5 http://127.0.0.1:${appConfig.containerPort}${appConfig.healthCheckPath} || exit 1`
+                    `curl -f --connect-timeout 5 --max-time 10 http://localhost:${appConfig.containerPort}${appConfig.healthCheckPath} || exit 1`
                 ],
                 interval: cdk.Duration.seconds(30), // Check every 30 seconds
-                timeout: cdk.Duration.seconds(15), // 15 second timeout for health check
-                retries: 3, // 3 consecutive failures = unhealthy
+                timeout: cdk.Duration.seconds(20), // Increased timeout for Next.js startup
+                retries: 5, // More retries to handle startup delays
                 startPeriod: envConfig.healthCheckGracePeriod, // Use environment-specific grace period
             },
             // Essential container - if this fails, the task stops

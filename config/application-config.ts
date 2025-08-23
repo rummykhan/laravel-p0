@@ -1,6 +1,6 @@
 import {BetaAccount} from "./account-config"
 import {Stage} from "./types";
-import {CDK_APP_REPOSITORY, USERS_WEB_APP_REPOSITORY} from "./packages";
+import {CDK_APP_REPOSITORY, SERVICE_REPO_NAME, USERS_WEB_APP_REPOSITORY} from "./packages";
 
 /**
  * Default Application Configuration
@@ -12,7 +12,7 @@ import {CDK_APP_REPOSITORY, USERS_WEB_APP_REPOSITORY} from "./packages";
 
 import { BaseApplicationConfig } from '../lib/types/configuration-types';
 
-const APP_NAME = 'meta-capi-web'
+const APP_NAME = SERVICE_REPO_NAME;
 
 /**
  * Default application configuration containing all the current hardcoded values
@@ -74,7 +74,7 @@ export const DEFAULT_APPLICATION_CONFIG: BaseApplicationConfig = {
   
   /** 
    * Health check endpoint path for load balancer and container health checks.
-   * Default: '/api/health' (from ecs-stack.ts target group health check configuration)
+   * Default: '/health' (dedicated health check endpoint)
    */
   healthCheckPath: '/api/health',
   

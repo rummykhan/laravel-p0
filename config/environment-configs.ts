@@ -80,7 +80,7 @@ export const ENVIRONMENT_CONFIGS: Record<string, EnvironmentConfig> = {
       // Deployment configuration for zero-downtime updates
       maxHealthyPercent: 200, // Allow double capacity during deployment
       minHealthyPercent: 50, // Keep at least half running
-      healthCheckGracePeriod: cdk.Duration.seconds(120), // Increased to allow container health check to stabilize
+      healthCheckGracePeriod: cdk.Duration.seconds(180), // Increased to allow Next.js to fully start up
 
       // Circuit breaker configuration for automatic rollback
       circuitBreakerEnabled: true,
