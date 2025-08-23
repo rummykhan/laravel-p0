@@ -29,7 +29,6 @@
     "node_modules",
     "dist",
     "cdk.out",
-    "users-app",
-    "nextjs-users"
+    "meta-capi-web"
   ]
 }
