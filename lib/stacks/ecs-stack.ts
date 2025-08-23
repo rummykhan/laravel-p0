@@ -6,7 +6,6 @@ import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import * as applicationautoscaling from 'aws-cdk-lib/aws-applicationautoscaling';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import { validateEnvironmentConfig } from '../../config/deployment-config';
@@ -350,18 +349,18 @@ export class EcsStack extends cdk.Stack {
                 // Add timestamp for deployment tracking
                 DEPLOYMENT_TIMESTAMP: new Date().toISOString(),
             },
-            // Container health check configuration using configurable health check path
-            // This works in conjunction with ALB health checks for comprehensive health monitoring
-            healthCheck: {
-                command: [
-                    'CMD-SHELL',
-                    `curl -f --connect-timeout 10 --max-time 15 http://localhost:${appConfig.containerPort}${appConfig.healthCheckPath} || exit 1`
-                ],
-                interval: cdk.Duration.seconds(30), // Check every 30 seconds
-                timeout: cdk.Duration.seconds(20), // Increased timeout for health check command
-                retries: 3, // Reasonable retries to handle temporary issues
-                startPeriod: envConfig.healthCheckGracePeriod, // Use environment-specific grace period
-            },
+            // Container health check disabled - relying on ALB target group health checks only
+            // ALB health checks are sufficient for most use cases and avoid container startup issues
+            // healthCheck: {
+            //     command: [
+            //         'CMD-SHELL',
+            //         `curl -f --connect-timeout 10 --max-time 15 http://localhost:${appConfig.containerPort}${appConfig.healthCheckPath} || exit 1`
+            //     ],
+            //     interval: cdk.Duration.seconds(30),
+            //     timeout: cdk.Duration.seconds(20),
+            //     retries: 3,
+            //     startPeriod: envConfig.healthCheckGracePeriod,
+            // },
             // Essential container - if this fails, the task stops
             essential: true,
             // Security configurations

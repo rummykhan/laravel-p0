@@ -1,8 +1,8 @@
 import * as cdk from 'aws-cdk-lib';
-import {Construct} from "constructs";
-import {DevStack} from "../stacks/dev-stack";
-import {EcsStack} from "../stacks/ecs-stack";
-import {VpcStack} from "../stacks/vpc-stack";
+import { Construct } from "constructs";
+import { DevStack } from "../stacks/dev-stack";
+import { EcsStack } from "../stacks/ecs-stack";
+import { VpcStack } from "../stacks/vpc-stack";
 import { resolveConfiguration } from "../utils/simple-config-resolver";
 import { ApplicationConfig } from "../types/configuration-types";
 import { Stage } from '../../config/types';
@@ -17,7 +17,7 @@ export class ApplicationStage extends cdk.Stage {
     super(scope, id, props);
 
     const fullStageName = props?.stageName || Stage.beta.toLowerCase();
-    
+
     // Extract base stage name from combined stage-region name (e.g., "beta-na" -> "beta")
     const stage = fullStageName.split('-')[0];
 
@@ -25,13 +25,13 @@ export class ApplicationStage extends cdk.Stage {
     this.resolvedConfiguration = resolveConfiguration(stage);
 
     // Create DevStack first (existing infrastructure)
-    this.devStack = new DevStack(this, `DevStack-${fullStageName}`, {
+    this.devStack = new DevStack(this, 'DevStack', {
       ...props,
       description: 'Development stack with existing resources',
     });
 
     // Create VPC Stack for network infrastructure
-    this.vpcStack = new VpcStack(this, `VpcStack-${fullStageName}`, {
+    this.vpcStack = new VpcStack(this, 'VpcStack', {
       ...props,
       description: `VPC infrastructure for ${this.resolvedConfiguration.applicationDisplayName}`,
       stage: stage, // Use base stage for configuration
@@ -39,7 +39,7 @@ export class ApplicationStage extends cdk.Stage {
     });
 
     // Create EcsStack for containerized application deployment with resolved configuration
-    this.ecsStack = new EcsStack(this, `EcsStack-${fullStageName}`, {
+    this.ecsStack = new EcsStack(this, 'EcsStack', {
       ...props,
       description: `ECS Fargate stack for ${this.resolvedConfiguration.applicationDisplayName} with ALB`,
       stage: stage, // Use base stage for configuration
