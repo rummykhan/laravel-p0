@@ -34,6 +34,19 @@ export interface DeploymentStage {
   accountId: string;
 }
 
+// New nested account structure
+export interface AccountsByRegion {
+  na?: string;
+  eu?: string;
+  fe?: string;
+}
+
+export interface AccountsByStage {
+  beta?: AccountsByRegion;
+  gamma?: AccountsByRegion;
+  prod?: AccountsByRegion;
+}
+
 // Environment-specific configuration interface
 export interface EcsEnvironmentConfig {
   // Resource sizing

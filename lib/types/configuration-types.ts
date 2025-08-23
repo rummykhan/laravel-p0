@@ -1,4 +1,4 @@
-import { DeploymentStage } from "../../config/types";
+import { DeploymentStage, AccountsByStage } from "../../config/types";
 import { Repository } from "../../config/packages";
 import { EcsEnvironmentConfig } from "../../config/types";
 
@@ -25,7 +25,7 @@ export interface BaseApplicationConfig {
   /** GitHub token secret name for repository access */
   githubTokenSecretName: string;
   /** Deployment stages/accounts configuration */
-  accounts: DeploymentStage[];
+  accounts: AccountsByStage;
   /** Repository configuration for infrastructure and service code */
   repositories: {
     infraRepository: Repository;

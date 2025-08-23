@@ -1,4 +1,4 @@
-import {BetaAccount} from "./account-config"
+import {BetaAccount, ACCOUNTS_BY_STAGE} from "./account-config"
 import {Stage} from "./types";
 import {CDK_APP_REPOSITORY, SERVICE_REPO_NAME, USERS_WEB_APP_REPOSITORY} from "./packages";
 
@@ -35,14 +35,7 @@ export const DEFAULT_APPLICATION_CONFIG: BaseApplicationConfig = {
   
   githubTokenSecretName: `github/pipeline`,
 
-  accounts: [
-    {
-      stage: Stage.beta,
-      isProd: BetaAccount.isProd,
-      region: BetaAccount.region,
-      accountId: BetaAccount.account,
-    },
-  ],
+  accounts: ACCOUNTS_BY_STAGE,
   repositories: {
     infraRepository: CDK_APP_REPOSITORY,
     serviceRepository: USERS_WEB_APP_REPOSITORY

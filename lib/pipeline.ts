@@ -3,6 +3,7 @@ import { Construct } from 'constructs';
 import { CodePipeline, CodePipelineSource, ShellStep } from 'aws-cdk-lib/pipelines';
 import { ApplicationStage } from "./stages/application-stage";
 import { ApplicationConfig } from "../lib/types/configuration-types";
+import { DeploymentStage, Stage, AwsRegion } from "../config/types";
 
 export interface PipelineProps extends cdk.StackProps {
   applicationConfig: ApplicationConfig;
@@ -163,15 +164,16 @@ export default class PipelineStack extends cdk.Stack {
     });
 
     // Deploy to all configured environments
-    applicationConfig.accounts.forEach((account) => {
-
+    const deploymentStages = this.convertAccountsToDeploymentStages(applicationConfig.accounts);
+    
+    deploymentStages.forEach((deploymentStage) => {
       // Add the stage to the pipeline
-      pipeline.addStage(new ApplicationStage(this, `application-stage-${account.stage.toLowerCase()}`, {
+      pipeline.addStage(new ApplicationStage(this, `application-stage-${deploymentStage.stage.toLowerCase()}-${this.getRegionKey(deploymentStage.region)}`, {
         env: {
-          account: account.accountId,
-          region: account.region
+          account: deploymentStage.accountId,
+          region: deploymentStage.region
         },
-        stageName: account.stage.toLowerCase(),
+        stageName: `${deploymentStage.stage.toLowerCase()}-${this.getRegionKey(deploymentStage.region)}`,
       }));
     });
   }
@@ -220,5 +222,67 @@ export default class PipelineStack extends cdk.Stack {
       `echo "Building Docker image with configured build args: ${buildArgs}"`,
       `docker build ${buildArgs} -t \${ECR_REPOSITORY_URI}:\${IMAGE_TAG} -t \${ECR_REPOSITORY_URI}:latest -t \${ECR_REPOSITORY_URI}:\${GIT_COMMIT_SHA} .`
     ];
+  }
+
+  /**
+   * Convert nested accounts structure to flat array of deployment stages.
+   * This allows the pipeline to iterate over all stage-region combinations.
+   * 
+   * @param accounts - Nested accounts structure organized by stage and region
+   * @returns Array of deployment stages for pipeline deployment
+   */
+  private convertAccountsToDeploymentStages(accounts: any): DeploymentStage[] {
+    const deploymentStages: DeploymentStage[] = [];
+
+    // Iterate through each stage (beta, gamma, prod)
+    Object.entries(accounts).forEach(([stageName, regions]) => {
+      if (regions && typeof regions === 'object') {
+        // Iterate through each region (na, eu, fe) within the stage
+        Object.entries(regions).forEach(([regionKey, accountId]) => {
+          if (accountId && typeof accountId === 'string') {
+            deploymentStages.push({
+              stage: stageName as Stage,
+              isProd: stageName === 'prod',
+              region: this.getAwsRegionFromKey(regionKey),
+              accountId: accountId
+            });
+          }
+        });
+      }
+    });
+
+    return deploymentStages;
+  }
+
+  /**
+   * Map region keys to AWS regions.
+   * 
+   * @param regionKey - Region key (na, eu, fe)
+   * @returns AWS region string
+   */
+  private getAwsRegionFromKey(regionKey: string): string {
+    const regionMap: { [key: string]: string } = {
+      'na': AwsRegion.IAD, // us-east-1
+      'eu': AwsRegion.DUB, // eu-west-1
+      'fe': AwsRegion.PDX, // us-west-2
+    };
+
+    return regionMap[regionKey] || AwsRegion.IAD; // Default to us-east-1
+  }
+
+  /**
+   * Get region key from AWS region string.
+   * 
+   * @param region - AWS region string
+   * @returns Region key (na, eu, fe)
+   */
+  private getRegionKey(region: string): string {
+    const regionKeyMap: { [key: string]: string } = {
+      [AwsRegion.IAD]: 'na', // us-east-1
+      [AwsRegion.DUB]: 'eu', // eu-west-1
+      [AwsRegion.PDX]: 'fe', // us-west-2
+    };
+
+    return regionKeyMap[region] || 'na'; // Default to na
   }
 }

@@ -16,38 +16,41 @@ export class ApplicationStage extends cdk.Stage {
   constructor(scope: Construct, id: string, props?: cdk.StageProps) {
     super(scope, id, props);
 
-    const stage = props?.stageName || Stage.beta.toLowerCase();
+    const fullStageName = props?.stageName || Stage.beta.toLowerCase();
+    
+    // Extract base stage name from combined stage-region name (e.g., "beta-na" -> "beta")
+    const stage = fullStageName.split('-')[0];
 
-    // Resolve configuration for the beta deployment stage
+    // Resolve configuration for the deployment stage
     this.resolvedConfiguration = resolveConfiguration(stage);
 
     // Create DevStack first (existing infrastructure)
-    this.devStack = new DevStack(this, `DevStack-${stage}`, {
+    this.devStack = new DevStack(this, `DevStack-${fullStageName}`, {
       ...props,
       description: 'Development stack with existing resources',
     });
 
     // Create VPC Stack for network infrastructure
-    this.vpcStack = new VpcStack(this, `VpcStack-${stage}`, {
+    this.vpcStack = new VpcStack(this, `VpcStack-${fullStageName}`, {
       ...props,
       description: `VPC infrastructure for ${this.resolvedConfiguration.applicationDisplayName}`,
-      stage: stage,
+      stage: stage, // Use base stage for configuration
       applicationConfig: this.resolvedConfiguration,
     });
 
     // Create EcsStack for containerized application deployment with resolved configuration
-    this.ecsStack = new EcsStack(this, `EcsStack-${stage}`, {
+    this.ecsStack = new EcsStack(this, `EcsStack-${fullStageName}`, {
       ...props,
       description: `ECS Fargate stack for ${this.resolvedConfiguration.applicationDisplayName} with ALB`,
-      stage: stage,
+      stage: stage, // Use base stage for configuration
       applicationConfig: this.resolvedConfiguration, // Pass resolved configuration to ECS stack
       vpc: this.vpcStack.vpc, // Pass VPC from VPC stack
     });
 
     // Add stage-specific tags to all resources in this stage
-    cdk.Tags.of(this).add('Stage', stage);
+    cdk.Tags.of(this).add('Stage', fullStageName); // Use full stage name for tagging
     cdk.Tags.of(this).add('Application', this.resolvedConfiguration.applicationName);
-    cdk.Tags.of(this).add('Environment', stage);
+    cdk.Tags.of(this).add('Environment', stage); // Use base stage for environment
     cdk.Tags.of(this).add('DeploymentType', 'ECS-Fargate');
   }
 }
