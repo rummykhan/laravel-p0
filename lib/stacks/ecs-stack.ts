@@ -9,15 +9,16 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as applicationautoscaling from 'aws-cdk-lib/aws-applicationautoscaling';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
-import { getDeploymentConfig, validateDeploymentConfig } from '../../config/deployment-config';
-import { ResolvedApplicationConfig } from '../../config/configuration-types';
+import { validateEnvironmentConfig } from '../../config/deployment-config';
+import { ApplicationConfig } from '../types/configuration-types';
 import { EcsEnvironmentConfig } from '../../config/types';
+import { getEnvironmentConfig } from '../../config/environment-configs';
 
 export interface EcsStackProps extends cdk.StackProps {
     environmentConfig?: EcsEnvironmentConfig;
     stage?: string;
     /** Resolved application configuration with resource names */
-    applicationConfig?: ResolvedApplicationConfig;
+    applicationConfig?: ApplicationConfig;
 }
 
 export class EcsStack extends cdk.Stack {
@@ -40,8 +41,13 @@ export class EcsStack extends cdk.Stack {
 
         // Get environment configuration
         const stage = props?.stage || 'beta';
-        const deploymentConfig = getDeploymentConfig(stage);
-        const envConfig = props?.environmentConfig || deploymentConfig.ecsConfig;
+        const environmentConfig = getEnvironmentConfig(stage);
+        
+        if (!environmentConfig) {
+            throw new Error(`No environment configuration found for stage: ${stage}`);
+        }
+        
+        const envConfig = props?.environmentConfig || environmentConfig.ecsConfig;
 
         // Get application configuration - use provided config or fall back to defaults
         const appConfig = props?.applicationConfig;
@@ -49,8 +55,8 @@ export class EcsStack extends cdk.Stack {
             throw new Error('Application configuration is required. Please provide a resolved application configuration.');
         }
 
-        // Validate the deployment configuration
-        validateDeploymentConfig(deploymentConfig);
+        // Validate the environment configuration
+        validateEnvironmentConfig(stage);
 
         // Create VPC with enhanced security configuration
         this.vpc = new ec2.Vpc(this, 'EcsVpc', {
@@ -92,8 +98,8 @@ export class EcsStack extends cdk.Stack {
         this.cluster = new ecs.Cluster(this, 'EcsCluster', {
             vpc: this.vpc,
             clusterName: appConfig.resourceNames.clusterName,
-            // Enable CloudWatch Container Insights based on deployment configuration
-            containerInsightsV2: deploymentConfig.enableContainerInsights ?
+            // Enable CloudWatch Container Insights based on environment configuration
+            containerInsightsV2: environmentConfig.monitoring.enableContainerInsights ?
                 ecs.ContainerInsights.ENABLED :
                 ecs.ContainerInsights.DISABLED,
         });
@@ -633,7 +639,7 @@ export class EcsStack extends cdk.Stack {
         });
 
         // Add CloudWatch alarms for scaling triggers with environment-specific configuration
-        if (deploymentConfig.enableDetailedMonitoring) {
+        if (environmentConfig.monitoring.enableDetailedMonitoring) {
             // High CPU utilization alarm
             const highCpuAlarm = new cloudwatch.Alarm(this, 'HighCpuAlarm', {
                 alarmName: `${appConfig.applicationName}-high-cpu-${stage}`,
@@ -846,9 +852,9 @@ export class EcsStack extends cdk.Stack {
                 markdown: `## Monitoring Configuration
 
 **Environment:** ${stage.toUpperCase()}
-**Detailed Monitoring:** ${deploymentConfig.enableDetailedMonitoring ? 'Enabled' : 'Disabled'}
-**Container Insights:** ${deploymentConfig.enableContainerInsights ? 'Enabled' : 'Disabled'}
-**X-Ray Tracing:** ${deploymentConfig.enableXRayTracing ? 'Enabled' : 'Disabled'}
+**Detailed Monitoring:** ${environmentConfig.monitoring.enableDetailedMonitoring ? 'Enabled' : 'Disabled'}
+**Container Insights:** ${environmentConfig.monitoring.enableContainerInsights ? 'Enabled' : 'Disabled'}
+**X-Ray Tracing:** ${environmentConfig.monitoring.enableXRayTracing ? 'Enabled' : 'Disabled'}
 
 **Resource Configuration:**
 - CPU: ${envConfig.cpu} units

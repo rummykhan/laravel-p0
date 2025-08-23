@@ -71,4 +71,4 @@ export interface EcsEnvironmentConfig {
 }
 
 // Re-export configuration types for convenient access
-export * from './configuration-types';
+export * from '../lib/types/configuration-types';

@@ -1,3 +1,7 @@
+import {BetaAccount} from "./account-config"
+import {Stage} from "./types";
+import {CDK_APP_REPOSITORY, USERS_WEB_APP_REPOSITORY} from "./packages";
+
 /**
  * Default Application Configuration
  * 
@@ -6,47 +10,54 @@
  * These defaults are based on the current hardcoded values used in the system.
  */
 
-import { ApplicationConfig } from './configuration-types';
+import { BaseApplicationConfig } from '../lib/types/configuration-types';
+
+const APP_NAME = 'meta-capi-web'
 
 /**
  * Default application configuration containing all the current hardcoded values
  * as configurable defaults. This ensures backward compatibility while enabling
  * customization for different applications and environments.
- * 
- * These values are extracted from the existing hardcoded implementation:
- * - Source directory: 'nextjs-users' (from pipeline.ts additionalInputs)
- * - ECR repository: 'nextjs-users' (from pipeline-config.ts and pipeline.ts)
- * - Container port: 3000 (from ecs-stack.ts port mappings and environment variables)
- * - Health check path: '/api/health' (from ecs-stack.ts target group health check)
- * - Build commands: npm ci and production build (from pipeline.ts synth commands)
- * - Docker build args: NODE_ENV and NEXT_TELEMETRY_DISABLED (from pipeline-config.ts)
  */
-export const DEFAULT_APPLICATION_CONFIG: ApplicationConfig = {
+export const DEFAULT_APPLICATION_CONFIG: BaseApplicationConfig = {
   // Application identification
   /** 
    * Unique identifier for the application used in resource naming.
-   * Default: 'nextjs-users' (extracted from existing hardcoded values)
    */
-  applicationName: 'nextjs-users',
+  applicationName: APP_NAME,
   
   /** 
    * Human-readable display name for the application.
    * Used in documentation, logs, and user interfaces.
    */
-  applicationDisplayName: 'Next.js Users Application',
+  applicationDisplayName: 'META CAPI Application',
+
+  
+  githubTokenSecretName: `github/pipeline`,
+
+  accounts: [
+    {
+      stage: Stage.beta,
+      isProd: BetaAccount.isProd,
+      region: BetaAccount.region,
+      accountId: BetaAccount.account,
+    },
+  ],
+  repositories: {
+    infraRepository: CDK_APP_REPOSITORY,
+    serviceRepository: USERS_WEB_APP_REPOSITORY
+  },
   
   // Repository and build configuration
   /** 
-   * Source directory containing the application code.
-   * Default: 'nextjs-users' (from pipeline.ts additionalInputs mapping)
+   * Source directory containing the application code, it should be same as your github repository.
    */
-  sourceDirectory: 'nextjs-users',
+  sourceDirectory: APP_NAME,
   
   /** 
    * ECR repository name for storing Docker images.
-   * Default: 'nextjs-users' (from pipeline-config.ts buildConfig.ecrRepositoryName)
    */
-  ecrRepositoryName: 'nextjs-users',
+  ecrRepositoryName: APP_NAME,
   
   /** 
    * Path to the Dockerfile relative to the source directory.
@@ -70,34 +81,29 @@ export const DEFAULT_APPLICATION_CONFIG: ApplicationConfig = {
   // ECS configuration
   /** 
    * ECS service name used for the Fargate service.
-   * Default: 'nextjs-users-service' (following current naming convention)
    */
-  serviceName: 'nextjs-users-service',
+  serviceName: `${APP_NAME}-service`,
   
   /** 
    * Suffix for ECS cluster name, will be combined with environment/stage.
-   * Default: 'cluster' (from ecs-stack.ts cluster naming pattern)
    */
   clusterNameSuffix: 'cluster',
   
   /** 
    * ECS task definition family name.
-   * Default: 'nextjs-users' (from ecs-stack.ts task definition family pattern)
    */
-  taskDefinitionFamily: 'nextjs-users',
+  taskDefinitionFamily: APP_NAME,
   
   // Load balancer configuration
   /** 
    * Application Load Balancer name.
-   * Default: 'nextjs-users-alb' (from ecs-stack.ts ALB loadBalancerName)
    */
-  albName: 'nextjs-users-alb',
+  albName: `${APP_NAME}-alb`,
   
   /** 
    * Target group name for the load balancer.
-   * Default: 'nextjs-users-tg' (from ecs-stack.ts target group targetGroupName)
    */
-  targetGroupName: 'nextjs-users-tg',
+  targetGroupName: `${APP_NAME}-tg`,
   
   // Build configuration
   /** 

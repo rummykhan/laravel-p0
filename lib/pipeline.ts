@@ -1,43 +1,41 @@
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { CodePipeline, CodePipelineSource, ShellStep } from 'aws-cdk-lib/pipelines';
-import { StageStack } from "./stages/beta-stage";
-import PipelineConfig from "../config/pipeline-config";
-import { ResolvedApplicationConfig } from "../config/configuration-types";
-import { Stage } from '../config/types';
+import { ApplicationStage } from "./stages/application-stage";
+import { ApplicationConfig } from "../lib/types/configuration-types";
 
 export interface PipelineProps extends cdk.StackProps {
-  pipelineConfig: ResolvedApplicationConfig;
+  applicationConfig: ApplicationConfig;
 }
 
-export default class Pipeline extends cdk.Stack {
+export default class PipelineStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: PipelineProps) {
     super(scope, id, props);
 
     // Get configuration for the primary deployment stage to use in pipeline setup
-    const { pipelineConfig } = props;
+    const { applicationConfig } = props;
 
-    const { infraRepository, serviceRepository } = PipelineConfig.repositories;
+    const { infraRepository, serviceRepository } = applicationConfig.repositories;
 
     // Create source for CDK app repository with explicit trigger configuration
     const infraRepositoryAsSource = CodePipelineSource.gitHub(infraRepository.repoString, infraRepository.branch, {
-      authentication: cdk.SecretValue.secretsManager(PipelineConfig.githubTokenSecretName),
+      authentication: cdk.SecretValue.secretsManager(applicationConfig.githubTokenSecretName),
       trigger: cdk.aws_codepipeline_actions.GitHubTrigger.WEBHOOK // Explicit webhook trigger
     });
 
     // Create source for Users Web App repository with explicit trigger configuration
     const serviceRepositoryAsSource = CodePipelineSource.gitHub(serviceRepository.repoString, serviceRepository.branch, {
-      authentication: cdk.SecretValue.secretsManager(PipelineConfig.githubTokenSecretName),
+      authentication: cdk.SecretValue.secretsManager(applicationConfig.githubTokenSecretName),
       trigger: cdk.aws_codepipeline_actions.GitHubTrigger.WEBHOOK // Explicit webhook trigger
     });
 
-    const pipeline = new CodePipeline(this, pipelineConfig.applicationName, {
-      pipelineName: pipelineConfig.applicationName,
+    const pipeline = new CodePipeline(this, applicationConfig.applicationName, {
+      pipelineName: applicationConfig.applicationName,
 
       synth: new ShellStep('Synth', {
         input: infraRepositoryAsSource,
         additionalInputs: {
-          [pipelineConfig.sourceDirectory]: serviceRepositoryAsSource,
+          [applicationConfig.sourceDirectory]: serviceRepositoryAsSource,
         },
         commands: [
           // Phase 1: Build CDK Infrastructure Code
@@ -50,17 +48,17 @@ export default class Pipeline extends cdk.Stack {
 
           // Phase 2: Build and Push Application Docker Image
           'echo "=== Phase 2: Building Application ==="',
-          `echo "Switching to application directory: ${pipelineConfig.sourceDirectory}..."`,
-          `cd ${pipelineConfig.sourceDirectory}`,
+          `echo "Switching to application directory: ${applicationConfig.sourceDirectory}..."`,
+          `cd ${applicationConfig.sourceDirectory}`,
           'echo "Installing application dependencies..."',
-          ...this.generateBuildCommands(pipelineConfig),
+          ...this.generateBuildCommands(applicationConfig),
 
           // Phase 3: Docker Image Build and Push
           'echo "=== Phase 3: Docker Image Build and Push ==="',
           'echo "Setting up AWS environment variables..."',
           'export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)',
           'export AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}',
-          `export ECR_REPOSITORY_URI=\${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_DEFAULT_REGION}.amazonaws.com/${pipelineConfig.resourceNames.ecrRepositoryName}`,
+          `export ECR_REPOSITORY_URI=\${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_DEFAULT_REGION}.amazonaws.com/${applicationConfig.resourceNames.ecrRepositoryName}`,
           'echo "AWS Account ID: ${AWS_ACCOUNT_ID}"',
           'echo "AWS Region: ${AWS_DEFAULT_REGION}"',
           'echo "ECR Repository URI: ${ECR_REPOSITORY_URI}"',
@@ -71,7 +69,7 @@ export default class Pipeline extends cdk.Stack {
 
           // Create ECR repository if it doesn't exist (will be handled by CDK, but this ensures it exists during build)
           'echo "Ensuring ECR repository exists..."',
-          `aws ecr describe-repositories --repository-names ${pipelineConfig.resourceNames.ecrRepositoryName} --region \${AWS_DEFAULT_REGION} || aws ecr create-repository --repository-name ${pipelineConfig.resourceNames.ecrRepositoryName} --region \${AWS_DEFAULT_REGION}`,
+          `aws ecr describe-repositories --repository-names ${applicationConfig.resourceNames.ecrRepositoryName} --region \${AWS_DEFAULT_REGION} || aws ecr create-repository --repository-name ${applicationConfig.resourceNames.ecrRepositoryName} --region \${AWS_DEFAULT_REGION}`,
 
           // Build Docker image with build timestamp as tag
           'echo "Building Docker image..."',
@@ -85,7 +83,7 @@ export default class Pipeline extends cdk.Stack {
           'ls -la',
 
           // Build with multiple tags for better tracking and build args from config
-          ...this.generateDockerBuildCommand(pipelineConfig),
+          ...this.generateDockerBuildCommand(applicationConfig),
 
           // Push Docker image to ECR with error handling
           'echo "Pushing Docker images to ECR..."',
@@ -165,13 +163,13 @@ export default class Pipeline extends cdk.Stack {
     });
 
     // Deploy to all configured environments
-    PipelineConfig.stageAccounts.forEach((stageAccount) => {
+    applicationConfig.accounts.forEach((account) => {
 
       // Add the stage to the pipeline
-      pipeline.addStage(new StageStack(this, stageAccount.stage, {
+      pipeline.addStage(new ApplicationStage(this, account.stage, {
         env: {
-          account: stageAccount.accountId,
-          region: stageAccount.region
+          account: account.accountId,
+          region: account.region
         }
       }));
     });
@@ -188,7 +186,7 @@ export default class Pipeline extends cdk.Stack {
    * @param config - Resolved application configuration
    * @returns Array of build command strings
    */
-  private generateBuildCommands(config: ResolvedApplicationConfig): string[] {
+  private generateBuildCommands(config: ApplicationConfig): string[] {
     const commands: string[] = [];
 
     // Add each configured build command with echo for visibility
@@ -211,7 +209,7 @@ export default class Pipeline extends cdk.Stack {
    * @param config - Resolved application configuration
    * @returns Array of Docker build command strings
    */
-  private generateDockerBuildCommand(config: ResolvedApplicationConfig): string[] {
+  private generateDockerBuildCommand(config: ApplicationConfig): string[] {
     // Build the build args string from configuration
     const buildArgs = Object.entries(config.dockerBuildArgs)
       .map(([key, value]) => `--build-arg ${key}=${value}`)

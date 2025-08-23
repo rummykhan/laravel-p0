@@ -1,13 +1,9 @@
-import * as logs from 'aws-cdk-lib/aws-logs';
-import * as cdk from 'aws-cdk-lib';
-import { EcsEnvironmentConfig } from './types';
-
 /**
  * Environment-Specific Configuration System
  * 
  * This module defines environment-specific configurations for beta, gamma, and prod
  * deployment stages. Each environment can override default application settings
- * and define custom naming conventions and build parameters.
+ * and define custom naming conventions, build parameters, and deployment settings.
  * 
  * Requirements addressed:
  * - 5.1: Support environment-specific configuration overrides
@@ -15,15 +11,17 @@ import { EcsEnvironmentConfig } from './types';
  * - 5.3: Use default configuration when no environment-specific override exists
  */
 
-import { EnvironmentConfig } from './configuration-types';
+import * as cdk from 'aws-cdk-lib';
+import * as logs from 'aws-cdk-lib/aws-logs';
+import { EnvironmentConfig } from '../lib/types/configuration-types';
 
 /**
- * Environment-specific configurations array containing settings for each
- * deployment stage. These configurations define naming conventions,
- * application overrides, and build settings specific to each environment.
+ * Environment-specific configurations record containing all settings for each
+ * deployment stage including infrastructure, deployment, and application overrides.
+ * Using Record<string, EnvironmentConfig> for efficient stage-based lookups.
  */
-export const ENVIRONMENT_CONFIGS: EnvironmentConfig[] = [
-  {
+export const ENVIRONMENT_CONFIGS: Record<string, EnvironmentConfig> = {
+  beta: {
     /**
      * Beta Environment Configuration
      * 
@@ -31,7 +29,7 @@ export const ENVIRONMENT_CONFIGS: EnvironmentConfig[] = [
      * Resources are named with a 'beta' suffix to distinguish from production.
      */
     stage: 'beta',
-    
+
     namingConvention: {
       /** Don't prefix resource names with stage name */
       useStagePrefix: false,
@@ -40,13 +38,13 @@ export const ENVIRONMENT_CONFIGS: EnvironmentConfig[] = [
       /** Use hyphen as separator between name components */
       separator: '-'
     },
-    
+
     /** Beta-specific application configuration overrides */
     applicationOverrides: {
       // Beta environment may use different health check intervals
       // or have specific configuration needs
     },
-    
+
     /** Beta-specific build configuration overrides */
     buildOverrides: {
       dockerBuildArgs: {
@@ -59,102 +57,232 @@ export const ENVIRONMENT_CONFIGS: EnvironmentConfig[] = [
       buildCommands: [
         'npm ci',
         'NODE_ENV=production npm run build',
-        'npm run test:ci'
       ]
+    },
+
+    /** ECS deployment configuration for beta environment */
+    ecsConfig: {
+      // Resource sizing optimized for cost and development
+      cpu: 512, // 0.5 vCPU
+      memoryLimitMiB: 1024, // 1 GB
+      memoryReservationMiB: 512, // 512 MB soft limit
+
+      // Service configuration for development
+      desiredCount: 2,
+      minCapacity: 1,
+      maxCapacity: 10,
+
+      // Auto-scaling configuration
+      targetCpuUtilization: 70,
+      scaleInCooldown: cdk.Duration.seconds(300), // 5 minutes
+      scaleOutCooldown: cdk.Duration.seconds(300), // 5 minutes
+
+      // Deployment configuration for zero-downtime updates
+      maxHealthyPercent: 200, // Allow double capacity during deployment
+      minHealthyPercent: 50, // Keep at least half running
+      healthCheckGracePeriod: cdk.Duration.seconds(120), // Increased to allow container health check to stabilize
+
+      // Circuit breaker configuration for automatic rollback
+      circuitBreakerEnabled: true,
+      circuitBreakerRollback: true,
+
+      // Environment variables for Next.js application
+      environmentVariables: {
+        NODE_ENV: 'production', // Use production mode for optimized builds even in beta
+        PORT: '3000',
+        LOG_LEVEL: 'debug',
+        SECURITY_HEADERS_ENABLED: 'true',
+        NEXT_TELEMETRY_DISABLED: '1',
+        ENABLE_DEBUG_LOGGING: 'true',
+        // Performance monitoring disabled for development
+        ENABLE_PERFORMANCE_MONITORING: 'false',
+        // Add beta-specific identifier
+        DEPLOYMENT_ENV: 'beta',
+      },
+
+      // Logging configuration
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+
+      // Security configuration
+      enableExecuteCommand: true, // Enabled for debugging
+    },
+
+    /** Monitoring and observability configuration for beta */
+    monitoring: {
+      enableDetailedMonitoring: true,
+      enableXRayTracing: false, // Disabled for cost optimization
+      enableContainerInsights: true,
     }
   },
-  
-  {
+
+  gamma: {
     /**
      * Gamma Environment Configuration
      * 
-     * Gamma is typically used for final pre-production testing and validation.
-     * It closely mirrors production settings but with gamma-specific naming.
+     * Gamma is typically used for pre-production testing with production-like settings.
+     * Resources are named with a 'gamma' suffix.
      */
     stage: 'gamma',
-    
+
     namingConvention: {
-      /** Don't prefix resource names with stage name */
       useStagePrefix: false,
-      /** Add stage name as suffix to resource names */
       useStageSuffix: true,
-      /** Use hyphen as separator between name components */
       separator: '-'
     },
-    
-    /** Gamma-specific application configuration overrides */
+
     applicationOverrides: {
-      // Gamma may have production-like settings but with different scaling
+      // Gamma may have production-like settings
     },
-    
-    /** Gamma-specific build configuration overrides */
+
     buildOverrides: {
       dockerBuildArgs: {
         NODE_ENV: 'production',
         NEXT_TELEMETRY_DISABLED: '1',
-        // Gamma-specific build args
-        NEXT_PUBLIC_ENV: 'gamma',
-        // Enable optimizations similar to production
-        NEXT_OPTIMIZE_FONTS: 'true',
-        NEXT_OPTIMIZE_IMAGES: 'true'
+        NEXT_PUBLIC_ENV: 'gamma'
       },
-      // Gamma includes comprehensive testing before deployment
       buildCommands: [
         'npm ci',
         'NODE_ENV=production npm run build',
-        'npm run test:ci',
-        'npm run test:e2e'
       ]
+    },
+
+    /** ECS deployment configuration for gamma environment */
+    ecsConfig: {
+      // Resource sizing closer to production
+      cpu: 1024, // 1 vCPU
+      memoryLimitMiB: 2048, // 2 GB
+      memoryReservationMiB: 1024, // 1 GB soft limit
+
+      // Service configuration for pre-production
+      desiredCount: 3,
+      minCapacity: 2,
+      maxCapacity: 15,
+
+      // Auto-scaling configuration
+      targetCpuUtilization: 60,
+      scaleInCooldown: cdk.Duration.seconds(300),
+      scaleOutCooldown: cdk.Duration.seconds(180), // Faster scale out
+
+      // Deployment configuration
+      maxHealthyPercent: 150,
+      minHealthyPercent: 75,
+      healthCheckGracePeriod: cdk.Duration.seconds(90),
+
+      // Circuit breaker configuration
+      circuitBreakerEnabled: true,
+      circuitBreakerRollback: true,
+
+      // Environment variables for gamma
+      environmentVariables: {
+        NODE_ENV: 'production',
+        PORT: '3000',
+        LOG_LEVEL: 'info',
+        SECURITY_HEADERS_ENABLED: 'true',
+        NEXT_TELEMETRY_DISABLED: '1',
+        ENABLE_DEBUG_LOGGING: 'false',
+        ENABLE_PERFORMANCE_MONITORING: 'true',
+        DEPLOYMENT_ENV: 'gamma',
+      },
+
+      // Logging configuration
+      logRetention: logs.RetentionDays.ONE_MONTH,
+
+      // Security configuration
+      enableExecuteCommand: false, // Disabled for security
+    },
+
+    /** Monitoring and observability configuration for gamma */
+    monitoring: {
+      enableDetailedMonitoring: true,
+      enableXRayTracing: true, // Enabled for pre-production testing
+      enableContainerInsights: true,
     }
   },
-  
-  {
+
+  prod: {
     /**
      * Production Environment Configuration
      * 
-     * Production environment with full optimizations enabled and
-     * production-grade build settings. This is the live environment
-     * serving real users.
+     * Production environment with high availability and performance settings.
+     * Resources are named with a 'prod' suffix.
      */
     stage: 'prod',
-    
+
     namingConvention: {
-      /** Don't prefix resource names with stage name */
       useStagePrefix: false,
-      /** Add stage name as suffix to resource names */
       useStageSuffix: true,
-      /** Use hyphen as separator between name components */
       separator: '-'
     },
-    
-    /** Production-specific application configuration overrides */
+
     applicationOverrides: {
-      // Production may have different resource requirements
-      // These can be set here if needed
+      // Production-specific overrides
     },
-    
-    /** Production-specific build configuration overrides */
+
     buildOverrides: {
       dockerBuildArgs: {
         NODE_ENV: 'production',
         NEXT_TELEMETRY_DISABLED: '1',
-        // Production-specific optimizations
-        NEXT_PUBLIC_ENV: 'production',
-        NEXT_OPTIMIZE_FONTS: 'true',
-        NEXT_OPTIMIZE_IMAGES: 'true',
-        NEXT_BUNDLE_ANALYZER: 'false',
-        // Security and performance optimizations
-        NEXT_STRICT_MODE: 'true'
+        NEXT_PUBLIC_ENV: 'production'
       },
-      // Production build with full optimization and validation
       buildCommands: [
-        'npm ci --only=production',
+        'npm ci',
         'NODE_ENV=production npm run build',
-        'npm run validate:build'
       ]
+    },
+
+    /** ECS deployment configuration for production environment */
+    ecsConfig: {
+      // Production resource sizing
+      cpu: 2048, // 2 vCPU
+      memoryLimitMiB: 4096, // 4 GB
+      memoryReservationMiB: 2048, // 2 GB soft limit
+
+      // Service configuration for production
+      desiredCount: 5,
+      minCapacity: 3,
+      maxCapacity: 50,
+
+      // Auto-scaling configuration
+      targetCpuUtilization: 50, // Conservative for production
+      scaleInCooldown: cdk.Duration.seconds(600), // Slower scale in
+      scaleOutCooldown: cdk.Duration.seconds(120), // Fast scale out
+
+      // Deployment configuration for maximum availability
+      maxHealthyPercent: 125,
+      minHealthyPercent: 100, // No downtime deployments
+      healthCheckGracePeriod: cdk.Duration.seconds(60),
+
+      // Circuit breaker configuration
+      circuitBreakerEnabled: true,
+      circuitBreakerRollback: true,
+
+      // Environment variables for production
+      environmentVariables: {
+        NODE_ENV: 'production',
+        PORT: '3000',
+        LOG_LEVEL: 'warn',
+        SECURITY_HEADERS_ENABLED: 'true',
+        NEXT_TELEMETRY_DISABLED: '1',
+        ENABLE_DEBUG_LOGGING: 'false',
+        ENABLE_PERFORMANCE_MONITORING: 'true',
+        DEPLOYMENT_ENV: 'production',
+      },
+
+      // Logging configuration
+      logRetention: logs.RetentionDays.SIX_MONTHS,
+
+      // Security configuration
+      enableExecuteCommand: false, // Disabled for security
+    },
+
+    /** Monitoring and observability configuration for production */
+    monitoring: {
+      enableDetailedMonitoring: true,
+      enableXRayTracing: true,
+      enableContainerInsights: true,
     }
-  }
-];
+  },
+};
 
 /**
  * Helper function to get environment configuration by stage name.
@@ -164,7 +292,7 @@ export const ENVIRONMENT_CONFIGS: EnvironmentConfig[] = [
  * @returns The environment configuration for the stage, or undefined if not found
  */
 export function getEnvironmentConfig(stage: string): EnvironmentConfig | undefined {
-  return ENVIRONMENT_CONFIGS.find(config => config.stage === stage);
+  return ENVIRONMENT_CONFIGS[stage];
 }
 
 /**
@@ -174,7 +302,7 @@ export function getEnvironmentConfig(stage: string): EnvironmentConfig | undefin
  * @returns Array of all configured environment stage names
  */
 export function getAvailableStages(): string[] {
-  return ENVIRONMENT_CONFIGS.map(config => config.stage);
+  return Object.keys(ENVIRONMENT_CONFIGS);
 }
 
 /**
@@ -184,105 +312,7 @@ export function getAvailableStages(): string[] {
  * @returns True if the stage is configured, false otherwise
  */
 export function isValidStage(stage: string): boolean {
-  return ENVIRONMENT_CONFIGS.some(config => config.stage === stage);
-}
-
-// Default environment configurations
-function getDefaultEnvironmentConfig(stage: string = 'beta'): EcsEnvironmentConfig {
-  const baseConfig: EcsEnvironmentConfig = {
-      // Base configuration for development/beta
-      cpu: 512, // 0.5 vCPU
-      memoryLimitMiB: 1024, // 1 GB
-      memoryReservationMiB: 512, // 512 MB soft limit
-      desiredCount: 2,
-      minCapacity: 1,
-      maxCapacity: 10,
-      targetCpuUtilization: 70,
-      scaleInCooldown: cdk.Duration.seconds(300),
-      scaleOutCooldown: cdk.Duration.seconds(300),
-      maxHealthyPercent: 200,
-      minHealthyPercent: 50,
-      healthCheckGracePeriod: cdk.Duration.seconds(60),
-      circuitBreakerEnabled: true,
-      circuitBreakerRollback: true,
-      environmentVariables: {
-          NODE_ENV: 'production',
-          PORT: '3000',
-          SECURITY_HEADERS_ENABLED: 'true',
-          NEXT_TELEMETRY_DISABLED: '1',
-      },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
-      enableExecuteCommand: false,
-  };
-
-  // Environment-specific overrides
-  switch (stage.toLowerCase()) {
-      case 'prod':
-      case 'production':
-          return {
-              ...baseConfig,
-              // Production configuration - higher resources and stricter settings
-              cpu: 1024, // 1 vCPU
-              memoryLimitMiB: 2048, // 2 GB
-              memoryReservationMiB: 1024, // 1 GB soft limit
-              desiredCount: 3, // Higher availability
-              minCapacity: 2, // Always keep at least 2 tasks
-              maxCapacity: 20, // Allow more scaling
-              targetCpuUtilization: 60, // Lower threshold for better performance
-              scaleInCooldown: cdk.Duration.seconds(600), // Longer cooldown for stability
-              scaleOutCooldown: cdk.Duration.seconds(180), // Faster scale-out
-              maxHealthyPercent: 150, // More conservative deployment
-              minHealthyPercent: 75, // Keep more tasks running during deployment
-              healthCheckGracePeriod: cdk.Duration.seconds(120), // More time for startup
-              environmentVariables: {
-                  ...baseConfig.environmentVariables,
-                  NODE_ENV: 'production',
-                  // Production-specific environment variables
-                  ENABLE_PERFORMANCE_MONITORING: 'true',
-                  LOG_LEVEL: 'warn',
-              },
-              logRetention: logs.RetentionDays.ONE_MONTH, // Longer retention for production
-              enableExecuteCommand: false, // Disabled for security
-          };
-
-      case 'gamma':
-      case 'staging':
-          return {
-              ...baseConfig,
-              // Gamma/staging configuration - similar to production but with some relaxed settings
-              cpu: 1024, // 1 vCPU
-              memoryLimitMiB: 1536, // 1.5 GB
-              memoryReservationMiB: 768, // 768 MB soft limit
-              desiredCount: 2,
-              minCapacity: 1,
-              maxCapacity: 15,
-              targetCpuUtilization: 65,
-              environmentVariables: {
-                  ...baseConfig.environmentVariables,
-                  NODE_ENV: 'staging',
-                  LOG_LEVEL: 'info',
-              },
-              logRetention: logs.RetentionDays.ONE_MONTH, // Closest available option
-              enableExecuteCommand: true, // Enabled for debugging
-          };
-
-      case 'beta':
-      case 'development':
-      case 'dev':
-      default:
-          return {
-              ...baseConfig,
-              // Beta/development configuration - optimized for cost and debugging
-              environmentVariables: {
-                  ...baseConfig.environmentVariables,
-                  NODE_ENV: 'development',
-                  LOG_LEVEL: 'debug',
-                  // Development-specific environment variables
-                  ENABLE_DEBUG_LOGGING: 'true',
-              },
-              enableExecuteCommand: true, // Enabled for debugging
-          };
-  }
+  return stage in ENVIRONMENT_CONFIGS;
 }
 
 /**

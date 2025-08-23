@@ -1,22 +1,21 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
-import Pipeline from '../lib/pipeline';
+import PipelineStack from '../lib/pipeline';
 import {Stage} from '../config/types'
-import PipelineConfig from '../config/pipeline-config'
 import { PipelineAccount } from '../config/account-config';
+import { resolveConfiguration } from '../lib/utils/simple-config-resolver';
 
 
 const app = new cdk.App();
 
+
 // Create a single pipeline that will deploy to multiple environments
 // The pipeline itself runs in a central account (usually tools/CICD account)
-new Pipeline(app, 'DevoWSPipeline', {
+new PipelineStack(app, 'DevoWSPipeline', {
   // Pipeline stack environment - where the pipeline infrastructure runs
   env: {
     account: PipelineAccount.account,
     region: PipelineAccount.region
   },
-  pipelineConfig: PipelineConfig.getConfigurationForStage(Stage.beta.toLowerCase()),
+  applicationConfig: resolveConfiguration(Stage.beta.toLowerCase()),
 });
-
-

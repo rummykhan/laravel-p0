@@ -2,20 +2,19 @@ import * as cdk from 'aws-cdk-lib';
 import {Construct} from "constructs";
 import {DevStack} from "../stacks/dev-stack";
 import {EcsStack} from "../stacks/ecs-stack";
-import { ConfigurationResolver } from "../../config/configuration-resolver";
-import { ResolvedApplicationConfig } from "../../config/configuration-types";
+import { resolveConfiguration } from "../utils/simple-config-resolver";
+import { ApplicationConfig } from "../types/configuration-types";
 
-export class StageStack extends cdk.Stage {
+export class ApplicationStage extends cdk.Stage {
   public readonly devStack: DevStack;
   public readonly ecsStack: EcsStack;
-  public readonly resolvedConfiguration: ResolvedApplicationConfig;
+  public readonly resolvedConfiguration: ApplicationConfig;
 
   constructor(scope: Construct, id: string, props?: cdk.StageProps) {
     super(scope, id, props);
 
     // Resolve configuration for the beta deployment stage
-    const configurationResolver = new ConfigurationResolver();
-    this.resolvedConfiguration = configurationResolver.resolveConfiguration('beta');
+    this.resolvedConfiguration = resolveConfiguration('beta');
 
     // Create DevStack first (existing infrastructure)
     this.devStack = new DevStack(this, `DevStack`, {

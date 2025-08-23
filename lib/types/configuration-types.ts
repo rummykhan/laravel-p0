@@ -1,3 +1,7 @@
+import { DeploymentStage } from "../../config/types";
+import { Repository } from "../../config/packages";
+import { EcsEnvironmentConfig } from "../../config/types";
+
 /**
  * Configuration interfaces and types for configurable deployment paths
  * 
@@ -6,45 +10,53 @@
  */
 
 /**
- * Main application configuration interface containing all configurable properties
- * for an application deployment.
+ * Base application configuration interface containing default application settings
+ * without resolved stage information or generated resource names.
+ * Used as a template for creating resolved configurations.
  */
-export interface ApplicationConfig {
+export interface BaseApplicationConfig {
   // Application identification
   /** Unique identifier for the application (used in resource naming) */
   applicationName: string;
   /** Human-readable display name for the application */
   applicationDisplayName: string;
-  
-  // Repository and build configuration
+
+  // Pipeline configuration
+  /** GitHub token secret name for repository access */
+  githubTokenSecretName: string;
+  /** Deployment stages/accounts configuration */
+  accounts: DeploymentStage[];
+  /** Repository configuration for infrastructure and service code */
+  repositories: {
+    infraRepository: Repository;
+    serviceRepository: Repository;
+  };
+
+  // Application settings (may be overridden per environment)
   /** Source directory containing the application code */
   sourceDirectory: string;
   /** ECR repository name for storing Docker images */
   ecrRepositoryName: string;
   /** Path to the Dockerfile relative to source directory */
   dockerfilePath: string;
-  
-  // Container configuration
   /** Port the container exposes for the application */
   containerPort: number;
   /** Health check endpoint path */
   healthCheckPath: string;
-  
-  // ECS configuration
+
+  // Resource naming (may be overridden per environment)
   /** ECS service name */
   serviceName: string;
   /** Suffix for ECS cluster name (will be combined with environment) */
   clusterNameSuffix: string;
   /** ECS task definition family name */
   taskDefinitionFamily: string;
-  
-  // Load balancer configuration
   /** Application Load Balancer name */
   albName: string;
   /** Target group name for the load balancer */
   targetGroupName: string;
-  
-  // Build configuration
+
+  // Build configuration (may be overridden per environment)
   /** Commands to run during the build process */
   buildCommands: string[];
   /** Docker build arguments passed during image build */
@@ -52,13 +64,28 @@ export interface ApplicationConfig {
 }
 
 /**
- * Environment-specific configuration interface for overriding default
- * application settings per deployment stage.
+ * Application configuration interface containing all application settings
+ * including resolved stage information and generated resource names.
+ * 
+ * This interface represents the complete, ready-to-use configuration
+ * after environment-specific processing and resource name generation.
+ */
+export interface ApplicationConfig extends BaseApplicationConfig {
+  // Resolution metadata (added during configuration resolution)
+  /** The stage this configuration was resolved for */
+  resolvedStage: string;
+  /** Generated resource names for this configuration */
+  resourceNames: ResourceNames;
+}
+
+/**
+ * Environment-specific configuration interface containing all environment-level
+ * settings including deployment, infrastructure, and application overrides.
  */
 export interface EnvironmentConfig {
   /** Deployment stage this configuration applies to */
   stage: string;
-  
+
   /** Resource naming patterns for this environment */
   namingConvention: {
     /** Whether to prefix resource names with stage name */
@@ -68,16 +95,29 @@ export interface EnvironmentConfig {
     /** Separator character between name components */
     separator: string;
   };
-  
-  /** Partial application configuration overrides for this environment */
-  applicationOverrides?: Partial<ApplicationConfig>;
-  
-  /** Environment-specific build setting overrides */
+
+  /** Application configuration overrides for this environment */
+  applicationOverrides?: Partial<BaseApplicationConfig>;
+
+  /** Build configuration overrides for this environment */
   buildOverrides?: {
     /** Docker build arguments specific to this environment */
     dockerBuildArgs?: { [key: string]: string };
     /** Build commands specific to this environment */
     buildCommands?: string[];
+  };
+
+  /** ECS deployment configuration for this environment */
+  ecsConfig: EcsEnvironmentConfig;
+
+  /** Infrastructure monitoring and observability settings */
+  monitoring: {
+    /** Enable detailed CloudWatch monitoring */
+    enableDetailedMonitoring: boolean;
+    /** Enable AWS X-Ray tracing */
+    enableXRayTracing: boolean;
+    /** Enable ECS Container Insights */
+    enableContainerInsights: boolean;
   };
 }
 
@@ -89,7 +129,7 @@ export interface ResourceNames {
   // ECR resources
   /** Generated ECR repository name */
   ecrRepositoryName: string;
-  
+
   // ECS resources
   /** Generated ECS cluster name */
   clusterName: string;
@@ -97,17 +137,17 @@ export interface ResourceNames {
   serviceName: string;
   /** Generated ECS task definition family name */
   taskDefinitionFamily: string;
-  
+
   // Load balancer resources
   /** Generated Application Load Balancer name */
   albName: string;
   /** Generated target group name */
   targetGroupName: string;
-  
+
   // CloudWatch resources
   /** Generated CloudWatch log group name */
   logGroupName: string;
-  
+
   // Security group names
   /** Generated ALB security group name */
   albSecurityGroupName: string;
@@ -129,16 +169,7 @@ export interface ValidationResult {
   suggestions?: string[];
 }
 
-/**
- * Resolved application configuration after merging defaults with
- * environment-specific overrides.
- */
-export interface ResolvedApplicationConfig extends ApplicationConfig {
-  /** The stage this configuration was resolved for */
-  resolvedStage: string;
-  /** Generated resource names for this configuration */
-  resourceNames: ResourceNames;
-}
+
 
 /**
  * Configuration validation error types for better error handling.
