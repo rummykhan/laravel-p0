@@ -8,148 +8,16 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as applicationautoscaling from 'aws-cdk-lib/aws-applicationautoscaling';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import { getDeploymentConfig, validateDeploymentConfig } from '../../config/deployment-config';
 import { ResolvedApplicationConfig } from '../../config/configuration-types';
-
-// Environment-specific configuration interface
-export interface EcsEnvironmentConfig {
-    // Resource sizing
-    cpu: number;
-    memoryLimitMiB: number;
-    memoryReservationMiB: number;
-
-    // Service configuration
-    desiredCount: number;
-    minCapacity: number;
-    maxCapacity: number;
-
-    // Auto-scaling configuration
-    targetCpuUtilization: number;
-    scaleInCooldown: cdk.Duration;
-    scaleOutCooldown: cdk.Duration;
-
-    // Deployment configuration
-    maxHealthyPercent: number;
-    minHealthyPercent: number;
-    healthCheckGracePeriod: cdk.Duration;
-
-    // Circuit breaker configuration
-    circuitBreakerEnabled: boolean;
-    circuitBreakerRollback: boolean;
-
-    // Environment variables
-    environmentVariables: { [key: string]: string };
-
-    // Logging configuration
-    logRetention: logs.RetentionDays;
-
-    // Security configuration
-    enableExecuteCommand: boolean;
-}
+import { EcsEnvironmentConfig } from '../../config/types';
 
 export interface EcsStackProps extends cdk.StackProps {
     environmentConfig?: EcsEnvironmentConfig;
     stage?: string;
     /** Resolved application configuration with resource names */
     applicationConfig?: ResolvedApplicationConfig;
-}
-
-// Default environment configurations
-function getDefaultEnvironmentConfig(stage: string = 'beta'): EcsEnvironmentConfig {
-    const baseConfig: EcsEnvironmentConfig = {
-        // Base configuration for development/beta
-        cpu: 512, // 0.5 vCPU
-        memoryLimitMiB: 1024, // 1 GB
-        memoryReservationMiB: 512, // 512 MB soft limit
-        desiredCount: 2,
-        minCapacity: 1,
-        maxCapacity: 10,
-        targetCpuUtilization: 70,
-        scaleInCooldown: cdk.Duration.seconds(300),
-        scaleOutCooldown: cdk.Duration.seconds(300),
-        maxHealthyPercent: 200,
-        minHealthyPercent: 50,
-        healthCheckGracePeriod: cdk.Duration.seconds(60),
-        circuitBreakerEnabled: true,
-        circuitBreakerRollback: true,
-        environmentVariables: {
-            NODE_ENV: 'production',
-            PORT: '3000',
-            SECURITY_HEADERS_ENABLED: 'true',
-            NEXT_TELEMETRY_DISABLED: '1',
-        },
-        logRetention: logs.RetentionDays.TWO_WEEKS,
-        enableExecuteCommand: false,
-    };
-
-    // Environment-specific overrides
-    switch (stage.toLowerCase()) {
-        case 'prod':
-        case 'production':
-            return {
-                ...baseConfig,
-                // Production configuration - higher resources and stricter settings
-                cpu: 1024, // 1 vCPU
-                memoryLimitMiB: 2048, // 2 GB
-                memoryReservationMiB: 1024, // 1 GB soft limit
-                desiredCount: 3, // Higher availability
-                minCapacity: 2, // Always keep at least 2 tasks
-                maxCapacity: 20, // Allow more scaling
-                targetCpuUtilization: 60, // Lower threshold for better performance
-                scaleInCooldown: cdk.Duration.seconds(600), // Longer cooldown for stability
-                scaleOutCooldown: cdk.Duration.seconds(180), // Faster scale-out
-                maxHealthyPercent: 150, // More conservative deployment
-                minHealthyPercent: 75, // Keep more tasks running during deployment
-                healthCheckGracePeriod: cdk.Duration.seconds(120), // More time for startup
-                environmentVariables: {
-                    ...baseConfig.environmentVariables,
-                    NODE_ENV: 'production',
-                    // Production-specific environment variables
-                    ENABLE_PERFORMANCE_MONITORING: 'true',
-                    LOG_LEVEL: 'warn',
-                },
-                logRetention: logs.RetentionDays.ONE_MONTH, // Longer retention for production
-                enableExecuteCommand: false, // Disabled for security
-            };
-
-        case 'gamma':
-        case 'staging':
-            return {
-                ...baseConfig,
-                // Gamma/staging configuration - similar to production but with some relaxed settings
-                cpu: 1024, // 1 vCPU
-                memoryLimitMiB: 1536, // 1.5 GB
-                memoryReservationMiB: 768, // 768 MB soft limit
-                desiredCount: 2,
-                minCapacity: 1,
-                maxCapacity: 15,
-                targetCpuUtilization: 65,
-                environmentVariables: {
-                    ...baseConfig.environmentVariables,
-                    NODE_ENV: 'staging',
-                    LOG_LEVEL: 'info',
-                },
-                logRetention: logs.RetentionDays.ONE_MONTH, // Closest available option
-                enableExecuteCommand: true, // Enabled for debugging
-            };
-
-        case 'beta':
-        case 'development':
-        case 'dev':
-        default:
-            return {
-                ...baseConfig,
-                // Beta/development configuration - optimized for cost and debugging
-                environmentVariables: {
-                    ...baseConfig.environmentVariables,
-                    NODE_ENV: 'development',
-                    LOG_LEVEL: 'debug',
-                    // Development-specific environment variables
-                    ENABLE_DEBUG_LOGGING: 'true',
-                },
-                enableExecuteCommand: true, // Enabled for debugging
-            };
-    }
 }
 
 export class EcsStack extends cdk.Stack {
@@ -165,6 +33,7 @@ export class EcsStack extends cdk.Stack {
     public readonly taskRole: iam.Role;
     public readonly ecsService: ecs.FargateService;
     public readonly scalableTarget: ecs.ScalableTaskCount;
+    public readonly serviceDiscoveryNamespace: servicediscovery.PrivateDnsNamespace;
 
     constructor(scope: Construct, id: string, props?: EcsStackProps) {
         super(scope, id, props);
@@ -543,17 +412,18 @@ export class EcsStack extends cdk.Stack {
                 // Add timestamp for deployment tracking
                 DEPLOYMENT_TIMESTAMP: new Date().toISOString(),
             },
-            // Health check configuration - temporarily disabled to rely on ALB health check only
-            // healthCheck: {
-            //     command: [
-            //         'CMD-SHELL',
-            //         'curl -f --connect-timeout 3 --max-time 5 http://127.0.0.1:3000/api/health || exit 1'
-            //     ],
-            //     interval: cdk.Duration.seconds(30),
-            //     timeout: cdk.Duration.seconds(15),
-            //     retries: 3,
-            //     startPeriod: cdk.Duration.seconds(180),
-            // },
+            // Container health check configuration using configurable health check path
+            // This works in conjunction with ALB health checks for comprehensive health monitoring
+            healthCheck: {
+                command: [
+                    'CMD-SHELL',
+                    `curl -f --connect-timeout 3 --max-time 5 http://127.0.0.1:${appConfig.containerPort}${appConfig.healthCheckPath} || exit 1`
+                ],
+                interval: cdk.Duration.seconds(30), // Check every 30 seconds
+                timeout: cdk.Duration.seconds(15), // 15 second timeout for health check
+                retries: 3, // 3 consecutive failures = unhealthy
+                startPeriod: envConfig.healthCheckGracePeriod, // Use environment-specific grace period
+            },
             // Essential container - if this fails, the task stops
             essential: true,
             // Security configurations
@@ -683,6 +553,14 @@ export class EcsStack extends cdk.Stack {
             exportName: `${this.stackName}-S3GatewayEndpointId`,
         });
 
+        // Create service discovery namespace for internal service communication
+        // This enables services to discover each other using DNS names within the VPC
+        this.serviceDiscoveryNamespace = new servicediscovery.PrivateDnsNamespace(this, 'ServiceDiscoveryNamespace', {
+            name: `${appConfig.applicationName}.local`,
+            vpc: this.vpc,
+            description: `Private DNS namespace for ${appConfig.applicationDisplayName} service discovery`,
+        });
+
         // Create ECS service with environment-specific deployment configuration
         this.ecsService = new ecs.FargateService(this, 'ApplicationService', {
             cluster: this.cluster,
@@ -710,7 +588,13 @@ export class EcsStack extends cdk.Stack {
             healthCheckGracePeriod: envConfig.healthCheckGracePeriod,
             // Use latest Fargate platform version for security patches
             platformVersion: ecs.FargatePlatformVersion.LATEST,
-            // Service discovery can be added later if needed for internal communication
+            // Enable service discovery for internal service communication
+            cloudMapOptions: {
+                cloudMapNamespace: this.serviceDiscoveryNamespace,
+                name: appConfig.applicationName,
+                dnsRecordType: servicediscovery.DnsRecordType.A,
+                dnsTtl: cdk.Duration.seconds(60),
+            },
             // Enable execute command for secure debugging - environment-specific
             enableExecuteCommand: envConfig.enableExecuteCommand,
 
@@ -1063,6 +947,28 @@ fields @timestamp, @message
             value: this.ecsService.serviceName,
             description: 'ECS Service Name',
             exportName: `${this.stackName}-EcsServiceName`,
+        });
+
+        // Service Discovery outputs for internal service communication
+        new cdk.CfnOutput(this, 'ServiceDiscoveryNamespaceId', {
+            value: this.serviceDiscoveryNamespace.namespaceId,
+            description: 'Service Discovery Namespace ID for internal communication',
+            exportName: `${this.stackName}-ServiceDiscoveryNamespaceId`,
+        });
+
+        new cdk.CfnOutput(this, 'ServiceDiscoveryNamespaceName', {
+            value: this.serviceDiscoveryNamespace.namespaceName,
+            description: 'Service Discovery Namespace Name for DNS resolution',
+            exportName: `${this.stackName}-ServiceDiscoveryNamespaceName`,
+        });
+
+        // Note: Service Discovery Service is automatically created by ECS cloudMapOptions
+        // The service ARN and ID are managed internally by the ECS service
+
+        new cdk.CfnOutput(this, 'InternalServiceDnsName', {
+            value: `${appConfig.applicationName}.${this.serviceDiscoveryNamespace.namespaceName}`,
+            description: 'Internal DNS name for service discovery (for other services to connect)',
+            exportName: `${this.stackName}-InternalServiceDnsName`,
         });
 
         // Auto-scaling outputs

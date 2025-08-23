@@ -1,3 +1,7 @@
+import * as logs from 'aws-cdk-lib/aws-logs';
+import * as cdk from 'aws-cdk-lib';
+import { EcsEnvironmentConfig } from './types';
+
 /**
  * Environment-Specific Configuration System
  * 
@@ -181,6 +185,104 @@ export function getAvailableStages(): string[] {
  */
 export function isValidStage(stage: string): boolean {
   return ENVIRONMENT_CONFIGS.some(config => config.stage === stage);
+}
+
+// Default environment configurations
+function getDefaultEnvironmentConfig(stage: string = 'beta'): EcsEnvironmentConfig {
+  const baseConfig: EcsEnvironmentConfig = {
+      // Base configuration for development/beta
+      cpu: 512, // 0.5 vCPU
+      memoryLimitMiB: 1024, // 1 GB
+      memoryReservationMiB: 512, // 512 MB soft limit
+      desiredCount: 2,
+      minCapacity: 1,
+      maxCapacity: 10,
+      targetCpuUtilization: 70,
+      scaleInCooldown: cdk.Duration.seconds(300),
+      scaleOutCooldown: cdk.Duration.seconds(300),
+      maxHealthyPercent: 200,
+      minHealthyPercent: 50,
+      healthCheckGracePeriod: cdk.Duration.seconds(60),
+      circuitBreakerEnabled: true,
+      circuitBreakerRollback: true,
+      environmentVariables: {
+          NODE_ENV: 'production',
+          PORT: '3000',
+          SECURITY_HEADERS_ENABLED: 'true',
+          NEXT_TELEMETRY_DISABLED: '1',
+      },
+      logRetention: logs.RetentionDays.TWO_WEEKS,
+      enableExecuteCommand: false,
+  };
+
+  // Environment-specific overrides
+  switch (stage.toLowerCase()) {
+      case 'prod':
+      case 'production':
+          return {
+              ...baseConfig,
+              // Production configuration - higher resources and stricter settings
+              cpu: 1024, // 1 vCPU
+              memoryLimitMiB: 2048, // 2 GB
+              memoryReservationMiB: 1024, // 1 GB soft limit
+              desiredCount: 3, // Higher availability
+              minCapacity: 2, // Always keep at least 2 tasks
+              maxCapacity: 20, // Allow more scaling
+              targetCpuUtilization: 60, // Lower threshold for better performance
+              scaleInCooldown: cdk.Duration.seconds(600), // Longer cooldown for stability
+              scaleOutCooldown: cdk.Duration.seconds(180), // Faster scale-out
+              maxHealthyPercent: 150, // More conservative deployment
+              minHealthyPercent: 75, // Keep more tasks running during deployment
+              healthCheckGracePeriod: cdk.Duration.seconds(120), // More time for startup
+              environmentVariables: {
+                  ...baseConfig.environmentVariables,
+                  NODE_ENV: 'production',
+                  // Production-specific environment variables
+                  ENABLE_PERFORMANCE_MONITORING: 'true',
+                  LOG_LEVEL: 'warn',
+              },
+              logRetention: logs.RetentionDays.ONE_MONTH, // Longer retention for production
+              enableExecuteCommand: false, // Disabled for security
+          };
+
+      case 'gamma':
+      case 'staging':
+          return {
+              ...baseConfig,
+              // Gamma/staging configuration - similar to production but with some relaxed settings
+              cpu: 1024, // 1 vCPU
+              memoryLimitMiB: 1536, // 1.5 GB
+              memoryReservationMiB: 768, // 768 MB soft limit
+              desiredCount: 2,
+              minCapacity: 1,
+              maxCapacity: 15,
+              targetCpuUtilization: 65,
+              environmentVariables: {
+                  ...baseConfig.environmentVariables,
+                  NODE_ENV: 'staging',
+                  LOG_LEVEL: 'info',
+              },
+              logRetention: logs.RetentionDays.ONE_MONTH, // Closest available option
+              enableExecuteCommand: true, // Enabled for debugging
+          };
+
+      case 'beta':
+      case 'development':
+      case 'dev':
+      default:
+          return {
+              ...baseConfig,
+              // Beta/development configuration - optimized for cost and debugging
+              environmentVariables: {
+                  ...baseConfig.environmentVariables,
+                  NODE_ENV: 'development',
+                  LOG_LEVEL: 'debug',
+                  // Development-specific environment variables
+                  ENABLE_DEBUG_LOGGING: 'true',
+              },
+              enableExecuteCommand: true, // Enabled for debugging
+          };
+  }
 }
 
 /**

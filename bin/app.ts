@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
 import Pipeline from '../lib/pipeline';
+import {Stage} from '../config/types'
+import PipelineConfig from '../config/pipeline-config'
 import { PipelineAccount } from '../config/account-config';
+
 
 const app = new cdk.App();
 
@@ -13,6 +16,7 @@ new Pipeline(app, 'DevoWSPipeline', {
     account: PipelineAccount.account,
     region: PipelineAccount.region
   },
+  pipelineConfig: PipelineConfig.getConfigurationForStage(Stage.beta.toLowerCase()),
 });
 
 

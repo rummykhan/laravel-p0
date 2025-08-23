@@ -5,7 +5,7 @@ import {EcsStack} from "../stacks/ecs-stack";
 import { ConfigurationResolver } from "../../config/configuration-resolver";
 import { ResolvedApplicationConfig } from "../../config/configuration-types";
 
-export class BetaStage extends cdk.Stage {
+export class StageStack extends cdk.Stage {
   public readonly devStack: DevStack;
   public readonly ecsStack: EcsStack;
   public readonly resolvedConfiguration: ResolvedApplicationConfig;

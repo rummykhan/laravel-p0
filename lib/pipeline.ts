@@ -1,38 +1,43 @@
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { CodePipeline, CodePipelineSource, ShellStep } from 'aws-cdk-lib/pipelines';
-import { BetaStage } from "./stages/beta-stage";
+import { StageStack } from "./stages/beta-stage";
 import PipelineConfig from "../config/pipeline-config";
 import { ResolvedApplicationConfig } from "../config/configuration-types";
+import { Stage } from '../config/types';
+
+export interface PipelineProps extends cdk.StackProps {
+  pipelineConfig: ResolvedApplicationConfig;
+}
 
 export default class Pipeline extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: PipelineProps) {
     super(scope, id, props);
 
-    const { CDK_APP_REPOSITORY, USERS_WEB_APP_REPOSITORY } = PipelineConfig.repositories;
-    
     // Get configuration for the primary deployment stage to use in pipeline setup
-    // This replaces hardcoded values with configurable ones (Requirements 1.2, 2.2)
-    const pipelineConfig = PipelineConfig.getConfigurationForStage('beta');
+    const { pipelineConfig } = props;
+
+    const { infraRepository, serviceRepository } = PipelineConfig.repositories;
 
     // Create source for CDK app repository with explicit trigger configuration
-    const cdkSource = CodePipelineSource.gitHub(CDK_APP_REPOSITORY.repoString, CDK_APP_REPOSITORY.branch, {
+    const infraRepositoryAsSource = CodePipelineSource.gitHub(infraRepository.repoString, infraRepository.branch, {
       authentication: cdk.SecretValue.secretsManager(PipelineConfig.githubTokenSecretName),
       trigger: cdk.aws_codepipeline_actions.GitHubTrigger.WEBHOOK // Explicit webhook trigger
     });
 
     // Create source for Users Web App repository with explicit trigger configuration
-    const usersWebAppSource = CodePipelineSource.gitHub(USERS_WEB_APP_REPOSITORY.repoString, USERS_WEB_APP_REPOSITORY.branch, {
+    const serviceRepositoryAsSource = CodePipelineSource.gitHub(serviceRepository.repoString, serviceRepository.branch, {
       authentication: cdk.SecretValue.secretsManager(PipelineConfig.githubTokenSecretName),
       trigger: cdk.aws_codepipeline_actions.GitHubTrigger.WEBHOOK // Explicit webhook trigger
     });
 
-    const pipeline = new CodePipeline(this, 'DevoWSPipeline', {
-      pipelineName: 'DevoWSPipeline',
+    const pipeline = new CodePipeline(this, pipelineConfig.applicationName, {
+      pipelineName: pipelineConfig.applicationName,
+
       synth: new ShellStep('Synth', {
-        input: cdkSource,
+        input: infraRepositoryAsSource,
         additionalInputs: {
-          [pipelineConfig.sourceDirectory]: usersWebAppSource,
+          [pipelineConfig.sourceDirectory]: serviceRepositoryAsSource,
         },
         commands: [
           // Phase 1: Build CDK Infrastructure Code
@@ -161,23 +166,14 @@ export default class Pipeline extends cdk.Stack {
 
     // Deploy to all configured environments
     PipelineConfig.stageAccounts.forEach((stageAccount) => {
-      const stageProps: cdk.StageProps = {
+
+      // Add the stage to the pipeline
+      pipeline.addStage(new StageStack(this, stageAccount.stage, {
         env: {
           account: stageAccount.accountId,
           region: stageAccount.region
         }
-      };
-
-      // Create stage name based on stage type and environment
-      const stageName = `${stageAccount.stage.charAt(0).toUpperCase() + stageAccount.stage.slice(1)}Stage`;
-
-      const betaStage = new BetaStage(this, stageName, stageProps);
-
-      // Add the stage to the pipeline
-      const stageDeployment = pipeline.addStage(betaStage);
-
-      // CDK automatically handles ECS service updates when task definition changes
-      // No additional post-deployment step needed
+      }));
     });
   }
 
@@ -194,13 +190,13 @@ export default class Pipeline extends cdk.Stack {
    */
   private generateBuildCommands(config: ResolvedApplicationConfig): string[] {
     const commands: string[] = [];
-    
+
     // Add each configured build command with echo for visibility
     config.buildCommands.forEach((command, index) => {
       commands.push(`echo "Running build command ${index + 1}: ${command}"`);
       commands.push(command);
     });
-    
+
     return commands;
   }
 
@@ -220,7 +216,7 @@ export default class Pipeline extends cdk.Stack {
     const buildArgs = Object.entries(config.dockerBuildArgs)
       .map(([key, value]) => `--build-arg ${key}=${value}`)
       .join(' ');
-    
+
     return [
       `echo "Building Docker image with configured build args: ${buildArgs}"`,
       `docker build ${buildArgs} -t \${ECR_REPOSITORY_URI}:\${IMAGE_TAG} -t \${ECR_REPOSITORY_URI}:latest -t \${ECR_REPOSITORY_URI}:\${GIT_COMMIT_SHA} .`

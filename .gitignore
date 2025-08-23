@@ -9,3 +9,7 @@ cdk.out
 
 # Pipeline additional inputs
 users-app
+
+.DS_Store
+
+.kiro

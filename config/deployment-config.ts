@@ -1,6 +1,8 @@
 import * as cdk from 'aws-cdk-lib';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import { EcsEnvironmentConfig } from '../lib/stacks/ecs-stack';
+import { EcsEnvironmentConfig } from './types';
+import { ResolvedApplicationConfig } from './configuration-types';
+import { ConfigurationResolver, defaultConfigurationResolver } from './configuration-resolver';
 
 // Deployment configuration interface for different environments
 export interface DeploymentConfig {
@@ -9,6 +11,24 @@ export interface DeploymentConfig {
   enableDetailedMonitoring: boolean;
   enableXRayTracing: boolean;
   enableContainerInsights: boolean;
+}
+
+// Enhanced deployment configuration that includes resolved application configuration
+export interface ResolvedDeploymentConfig extends DeploymentConfig {
+  // Resolved application configuration for this deployment
+  applicationConfig: ResolvedApplicationConfig;
+  // Stage-specific resource names
+  resourceNames: {
+    ecrRepositoryName: string;
+    clusterName: string;
+    serviceName: string;
+    taskDefinitionFamily: string;
+    albName: string;
+    targetGroupName: string;
+    logGroupName: string;
+    albSecurityGroupName: string;
+    ecsSecurityGroupName: string;
+  };
 }
 
 // Environment-specific deployment configurations
@@ -41,6 +61,8 @@ export const DeploymentConfigs: { [stage: string]: DeploymentConfig } = {
       circuitBreakerRollback: true,
       
       // Environment variables for Next.js application
+      // Note: These will be merged with application-specific environment variables
+      // when using getResolvedDeploymentConfig()
       environmentVariables: {
         NODE_ENV: 'production', // Use production mode for optimized builds even in beta
         PORT: '3000',
@@ -93,6 +115,8 @@ export const DeploymentConfigs: { [stage: string]: DeploymentConfig } = {
       circuitBreakerRollback: true,
       
       // Environment variables for staging
+      // Note: These will be merged with application-specific environment variables
+      // when using getResolvedDeploymentConfig()
       environmentVariables: {
         NODE_ENV: 'production', // Use production mode for optimized builds
         PORT: '3000',
@@ -144,6 +168,8 @@ export const DeploymentConfigs: { [stage: string]: DeploymentConfig } = {
       circuitBreakerRollback: true,
       
       // Environment variables for production
+      // Note: These will be merged with application-specific environment variables
+      // when using getResolvedDeploymentConfig()
       environmentVariables: {
         NODE_ENV: 'production',
         PORT: '3000',
@@ -177,6 +203,131 @@ export function getDeploymentConfig(stage: string): DeploymentConfig {
     return DeploymentConfigs.beta;
   }
   return config;
+}
+
+/**
+ * Get resolved deployment configuration that integrates with application configuration.
+ * This function merges the stage-specific deployment configuration with resolved
+ * application configuration, including proper resource naming and environment variables.
+ * 
+ * @param stage - Deployment stage (beta, gamma, prod)
+ * @param configResolver - Configuration resolver instance (optional, uses default if not provided)
+ * @returns Resolved deployment configuration with application-specific settings
+ * 
+ * Requirements addressed:
+ * - 5.1: Environment-specific configuration overrides
+ * - 5.2: Environment-specific settings application
+ * - 5.4: Environment-specific settings prioritization
+ */
+export function getResolvedDeploymentConfig(
+  stage: string,
+  configResolver: ConfigurationResolver = defaultConfigurationResolver
+): ResolvedDeploymentConfig {
+  // Get base deployment configuration for the stage
+  const baseDeploymentConfig = getDeploymentConfig(stage);
+  
+  // Resolve application configuration for the stage
+  const applicationConfig = configResolver.resolveConfiguration(stage);
+  
+  // Create enhanced environment variables that include application-specific settings
+  const enhancedEnvironmentVariables = {
+    ...baseDeploymentConfig.ecsConfig.environmentVariables,
+    // Add application-specific environment variables
+    APPLICATION_NAME: applicationConfig.applicationName,
+    APPLICATION_DISPLAY_NAME: applicationConfig.applicationDisplayName,
+    PORT: applicationConfig.containerPort.toString(),
+    HEALTH_CHECK_PATH: applicationConfig.healthCheckPath,
+    // Add stage information
+    DEPLOYMENT_STAGE: stage,
+    // Add resource names for potential use by the application
+    ECR_REPOSITORY_NAME: applicationConfig.resourceNames.ecrRepositoryName,
+    ECS_CLUSTER_NAME: applicationConfig.resourceNames.clusterName,
+    ECS_SERVICE_NAME: applicationConfig.resourceNames.serviceName,
+  };
+  
+  // Create enhanced ECS configuration with resolved names and settings
+  const enhancedEcsConfig: EcsEnvironmentConfig = {
+    ...baseDeploymentConfig.ecsConfig,
+    environmentVariables: enhancedEnvironmentVariables,
+  };
+  
+  // Create resolved deployment configuration
+  const resolvedConfig: ResolvedDeploymentConfig = {
+    ...baseDeploymentConfig,
+    ecsConfig: enhancedEcsConfig,
+    applicationConfig,
+    resourceNames: {
+      ecrRepositoryName: applicationConfig.resourceNames.ecrRepositoryName,
+      clusterName: applicationConfig.resourceNames.clusterName,
+      serviceName: applicationConfig.resourceNames.serviceName,
+      taskDefinitionFamily: applicationConfig.resourceNames.taskDefinitionFamily,
+      albName: applicationConfig.resourceNames.albName,
+      targetGroupName: applicationConfig.resourceNames.targetGroupName,
+      logGroupName: applicationConfig.resourceNames.logGroupName,
+      albSecurityGroupName: applicationConfig.resourceNames.albSecurityGroupName,
+      ecsSecurityGroupName: applicationConfig.resourceNames.ecsSecurityGroupName,
+    },
+  };
+  
+  return resolvedConfig;
+}
+
+/**
+ * Get deployment configuration with custom application configuration.
+ * This allows overriding the default application configuration for specific deployments.
+ * 
+ * @param stage - Deployment stage
+ * @param customApplicationConfig - Custom resolved application configuration
+ * @returns Resolved deployment configuration with custom application settings
+ */
+export function getDeploymentConfigWithCustomApp(
+  stage: string,
+  customApplicationConfig: ResolvedApplicationConfig
+): ResolvedDeploymentConfig {
+  // Get base deployment configuration for the stage
+  const baseDeploymentConfig = getDeploymentConfig(stage);
+  
+  // Create enhanced environment variables with custom application settings
+  const enhancedEnvironmentVariables = {
+    ...baseDeploymentConfig.ecsConfig.environmentVariables,
+    // Add custom application-specific environment variables
+    APPLICATION_NAME: customApplicationConfig.applicationName,
+    APPLICATION_DISPLAY_NAME: customApplicationConfig.applicationDisplayName,
+    PORT: customApplicationConfig.containerPort.toString(),
+    HEALTH_CHECK_PATH: customApplicationConfig.healthCheckPath,
+    // Add stage information
+    DEPLOYMENT_STAGE: stage,
+    // Add resource names for potential use by the application
+    ECR_REPOSITORY_NAME: customApplicationConfig.resourceNames.ecrRepositoryName,
+    ECS_CLUSTER_NAME: customApplicationConfig.resourceNames.clusterName,
+    ECS_SERVICE_NAME: customApplicationConfig.resourceNames.serviceName,
+  };
+  
+  // Create enhanced ECS configuration
+  const enhancedEcsConfig: EcsEnvironmentConfig = {
+    ...baseDeploymentConfig.ecsConfig,
+    environmentVariables: enhancedEnvironmentVariables,
+  };
+  
+  // Create resolved deployment configuration
+  const resolvedConfig: ResolvedDeploymentConfig = {
+    ...baseDeploymentConfig,
+    ecsConfig: enhancedEcsConfig,
+    applicationConfig: customApplicationConfig,
+    resourceNames: {
+      ecrRepositoryName: customApplicationConfig.resourceNames.ecrRepositoryName,
+      clusterName: customApplicationConfig.resourceNames.clusterName,
+      serviceName: customApplicationConfig.resourceNames.serviceName,
+      taskDefinitionFamily: customApplicationConfig.resourceNames.taskDefinitionFamily,
+      albName: customApplicationConfig.resourceNames.albName,
+      targetGroupName: customApplicationConfig.resourceNames.targetGroupName,
+      logGroupName: customApplicationConfig.resourceNames.logGroupName,
+      albSecurityGroupName: customApplicationConfig.resourceNames.albSecurityGroupName,
+      ecsSecurityGroupName: customApplicationConfig.resourceNames.ecsSecurityGroupName,
+    },
+  };
+  
+  return resolvedConfig;
 }
 
 // Helper function to validate deployment configuration
@@ -217,4 +368,81 @@ export function validateDeploymentConfig(config: DeploymentConfig): boolean {
   }
   
   return true;
+}
+
+/**
+ * Validate resolved deployment configuration including application configuration.
+ * This function performs comprehensive validation of both deployment and application settings.
+ * 
+ * @param config - Resolved deployment configuration to validate
+ * @returns True if configuration is valid
+ * @throws Error if validation fails
+ */
+export function validateResolvedDeploymentConfig(config: ResolvedDeploymentConfig): boolean {
+  // First validate the base deployment configuration
+  validateDeploymentConfig(config);
+  
+  // Validate application configuration is present
+  if (!config.applicationConfig) {
+    throw new Error('Application configuration is missing from resolved deployment configuration');
+  }
+  
+  // Validate resource names are present
+  if (!config.resourceNames) {
+    throw new Error('Resource names are missing from resolved deployment configuration');
+  }
+  
+  // Validate that environment variables include application-specific settings
+  const envVars = config.ecsConfig.environmentVariables;
+  const requiredAppVars = ['APPLICATION_NAME', 'PORT', 'DEPLOYMENT_STAGE'];
+  
+  for (const requiredVar of requiredAppVars) {
+    if (!envVars[requiredVar]) {
+      throw new Error(`Required environment variable '${requiredVar}' is missing from resolved configuration`);
+    }
+  }
+  
+  // Validate that PORT environment variable matches application configuration
+  const portFromEnv = parseInt(envVars.PORT || '0', 10);
+  if (portFromEnv !== config.applicationConfig.containerPort) {
+    throw new Error(`PORT environment variable (${portFromEnv}) does not match application configuration port (${config.applicationConfig.containerPort})`);
+  }
+  
+  // Validate that APPLICATION_NAME matches the resolved configuration
+  if (envVars.APPLICATION_NAME !== config.applicationConfig.applicationName) {
+    throw new Error(`APPLICATION_NAME environment variable does not match application configuration`);
+  }
+  
+  // Validate resource names consistency
+  const resourceNames = config.resourceNames;
+  const appResourceNames = config.applicationConfig.resourceNames;
+  
+  if (resourceNames.ecrRepositoryName !== appResourceNames.ecrRepositoryName) {
+    throw new Error('ECR repository name mismatch between deployment and application configuration');
+  }
+  
+  if (resourceNames.serviceName !== appResourceNames.serviceName) {
+    throw new Error('ECS service name mismatch between deployment and application configuration');
+  }
+  
+  return true;
+}
+
+/**
+ * Get all available deployment stages.
+ * 
+ * @returns Array of configured deployment stage names
+ */
+export function getAvailableDeploymentStages(): string[] {
+  return Object.keys(DeploymentConfigs);
+}
+
+/**
+ * Check if a deployment stage is valid/configured.
+ * 
+ * @param stage - Stage name to validate
+ * @returns True if stage is configured
+ */
+export function isValidDeploymentStage(stage: string): boolean {
+  return stage.toLowerCase() in DeploymentConfigs;
 }

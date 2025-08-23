@@ -4,11 +4,12 @@ import {CDK_APP_REPOSITORY, Repository, USERS_WEB_APP_REPOSITORY} from "./packag
 import {defaultConfigurationResolver} from "./configuration-resolver";
 
 export interface PipelineInterface {
+  pipelineName: string;
   githubTokenSecretName: string;
   stageAccounts: DeploymentStage[];
   repositories: {
-    CDK_APP_REPOSITORY: Repository;
-    USERS_WEB_APP_REPOSITORY: Repository;
+    infraRepository: Repository;
+    serviceRepository: Repository;
   };
   // Build configuration for container deployment
   buildConfig: {
@@ -61,6 +62,7 @@ function getConfigurationForStage(stage: string): ResolvedApplicationConfig {
  * - Maintains backward compatibility by using current values as defaults
  */
 const PipelineConfig: PipelineInterface = {
+  pipelineName: `DevoWSPipeline`,
   githubTokenSecretName: `github/pipeline`,
   stageAccounts: [
     {
@@ -71,8 +73,8 @@ const PipelineConfig: PipelineInterface = {
     },
   ],
   repositories: {
-    CDK_APP_REPOSITORY,
-    USERS_WEB_APP_REPOSITORY
+    infraRepository: CDK_APP_REPOSITORY,
+    serviceRepository: USERS_WEB_APP_REPOSITORY
   },
   // Build configuration for container deployment - now uses resolved configuration
   buildConfig: (() => {
