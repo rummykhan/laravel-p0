@@ -166,11 +166,12 @@ export default class PipelineStack extends cdk.Stack {
     applicationConfig.accounts.forEach((account) => {
 
       // Add the stage to the pipeline
-      pipeline.addStage(new ApplicationStage(this, account.stage, {
+      pipeline.addStage(new ApplicationStage(this, `application-stage-${account.stage.toLowerCase()}`, {
         env: {
           account: account.accountId,
           region: account.region
-        }
+        },
+        stageName: account.stage.toLowerCase(),
       }));
     });
   }

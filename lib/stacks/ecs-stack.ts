@@ -19,10 +19,12 @@ export interface EcsStackProps extends cdk.StackProps {
     stage?: string;
     /** Resolved application configuration with resource names */
     applicationConfig?: ApplicationConfig;
+    /** VPC to use for ECS resources */
+    vpc?: ec2.IVpc;
 }
 
 export class EcsStack extends cdk.Stack {
-    public readonly vpc: ec2.Vpc;
+    public readonly vpc: ec2.IVpc;
     public readonly cluster: ecs.Cluster;
     public readonly albSecurityGroup: ec2.SecurityGroup;
     public readonly ecsSecurityGroup: ec2.SecurityGroup;
@@ -58,41 +60,11 @@ export class EcsStack extends cdk.Stack {
         // Validate the environment configuration
         validateEnvironmentConfig(stage);
 
-        // Create VPC with enhanced security configuration
-        this.vpc = new ec2.Vpc(this, 'EcsVpc', {
-            ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16'),
-            maxAzs: 2, // Use 2 availability zones for high availability
-            subnetConfiguration: [
-                {
-                    cidrMask: 24,
-                    name: 'Public',
-                    subnetType: ec2.SubnetType.PUBLIC,
-                },
-                {
-                    cidrMask: 24,
-                    name: 'Private',
-                    subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS, // NAT Gateway for secure outbound access
-                },
-            ],
-            // Enable DNS hostnames and resolution for proper service discovery
-            enableDnsHostnames: true,
-            enableDnsSupport: true,
-            // Configure NAT Gateway for enhanced security and cost optimization
-            natGateways: 1, // Use single NAT Gateway for cost optimization (can be increased for production)
-            // Enable VPC Flow Logs for security monitoring
-            flowLogs: {
-                'VpcFlowLogs': {
-                    destination: ec2.FlowLogDestination.toCloudWatchLogs(
-                        new logs.LogGroup(this, 'VpcFlowLogsGroup', {
-                            logGroupName: '/aws/vpc/flowlogs',
-                            retention: logs.RetentionDays.ONE_WEEK,
-                            removalPolicy: cdk.RemovalPolicy.DESTROY,
-                        })
-                    ),
-                    trafficType: ec2.FlowLogTrafficType.ALL, // Log all traffic for security analysis
-                },
-            },
-        });
+        // Use provided VPC or throw error if not provided
+        if (!props?.vpc) {
+            throw new Error('VPC is required. Please provide a VPC instance from VpcStack.');
+        }
+        this.vpc = props.vpc;
 
         // Create ECS Cluster with environment-specific configuration
         this.cluster = new ecs.Cluster(this, 'EcsCluster', {
@@ -184,47 +156,7 @@ export class EcsStack extends cdk.Stack {
             `Allow traffic from ALB to ECS tasks on port ${appConfig.containerPort} only`
         );
 
-        // Create VPC endpoints for enhanced security (simplified configuration)
-        // ECR API VPC Endpoint
-        const ecrApiEndpoint = new ec2.InterfaceVpcEndpoint(this, 'EcrApiEndpoint', {
-            vpc: this.vpc,
-            service: ec2.InterfaceVpcEndpointAwsService.ECR,
-            subnets: {
-                subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-            },
-            privateDnsEnabled: true,
-        });
-
-        // ECR DKR VPC Endpoint (for Docker registry operations)
-        const ecrDkrEndpoint = new ec2.InterfaceVpcEndpoint(this, 'EcrDkrEndpoint', {
-            vpc: this.vpc,
-            service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
-            subnets: {
-                subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-            },
-            privateDnsEnabled: true,
-        });
-
-        // CloudWatch Logs VPC Endpoint
-        const cloudWatchLogsEndpoint = new ec2.InterfaceVpcEndpoint(this, 'CloudWatchLogsEndpoint', {
-            vpc: this.vpc,
-            service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
-            subnets: {
-                subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-            },
-            privateDnsEnabled: true,
-        });
-
-        // S3 Gateway VPC Endpoint (for ECR layer storage)
-        const s3GatewayEndpoint = new ec2.GatewayVpcEndpoint(this, 'S3GatewayEndpoint', {
-            vpc: this.vpc,
-            service: ec2.GatewayVpcEndpointAwsService.S3,
-            subnets: [
-                {
-                    subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-                },
-            ],
-        });
+        // VPC endpoints are now managed by VpcStack
 
         // Create Application Load Balancer in public subnets
         this.applicationLoadBalancer = new elbv2.ApplicationLoadBalancer(this, 'ApplicationLoadBalancer', {
@@ -449,24 +381,7 @@ export class EcsStack extends cdk.Stack {
             }),
         });
 
-        // Add stack outputs for cross-stack references
-        new cdk.CfnOutput(this, 'VpcId', {
-            value: this.vpc.vpcId,
-            description: 'VPC ID for ECS deployment',
-            exportName: `${this.stackName}-VpcId`,
-        });
-
-        new cdk.CfnOutput(this, 'PublicSubnetIds', {
-            value: this.vpc.publicSubnets.map(subnet => subnet.subnetId).join(','),
-            description: 'Public Subnet IDs for ALB deployment',
-            exportName: `${this.stackName}-PublicSubnetIds`,
-        });
-
-        new cdk.CfnOutput(this, 'PrivateSubnetIds', {
-            value: this.vpc.privateSubnets.map(subnet => subnet.subnetId).join(','),
-            description: 'Private Subnet IDs for ECS tasks',
-            exportName: `${this.stackName}-PrivateSubnetIds`,
-        });
+        // VPC-related outputs are now managed by VpcStack
 
         new cdk.CfnOutput(this, 'ClusterArn', {
             value: this.cluster.clusterArn,
@@ -540,24 +455,7 @@ export class EcsStack extends cdk.Stack {
             exportName: `${this.stackName}-TaskRoleArn`,
         });
 
-        // Security-related outputs
-        new cdk.CfnOutput(this, 'EcrApiEndpointId', {
-            value: ecrApiEndpoint.vpcEndpointId,
-            description: 'ECR API VPC Endpoint ID',
-            exportName: `${this.stackName}-EcrApiEndpointId`,
-        });
-
-        new cdk.CfnOutput(this, 'CloudWatchLogsEndpointId', {
-            value: cloudWatchLogsEndpoint.vpcEndpointId,
-            description: 'CloudWatch Logs VPC Endpoint ID',
-            exportName: `${this.stackName}-CloudWatchLogsEndpointId`,
-        });
-
-        new cdk.CfnOutput(this, 'S3GatewayEndpointId', {
-            value: s3GatewayEndpoint.vpcEndpointId,
-            description: 'S3 Gateway VPC Endpoint ID',
-            exportName: `${this.stackName}-S3GatewayEndpointId`,
-        });
+        // VPC endpoint outputs are now managed by VpcStack
 
         // Create service discovery namespace for internal service communication
         // This enables services to discover each other using DNS names within the VPC
