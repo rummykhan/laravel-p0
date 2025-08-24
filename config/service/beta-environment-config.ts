@@ -11,7 +11,8 @@ export default {
     domainConfig: {
         hostedZoneName: `clickpattern.dev`,
         hostedZoneId: `Z03233892327430JQ2XMI`,
-        domainName: `meta.clickpattern.dev`
+        domainName: `meta.clickpattern.dev`,
+        certificateArn: `arn:aws:acm:us-east-1:108271872087:certificate/cfbaab45-f8c1-4623-93b1-13bc69eb145a`,
     },
     
     /** Beta-specific build configuration overrides */
@@ -94,8 +95,8 @@ export default {
             `CLERK_SECRET_KEY`,
             `DEBUG_TOKEN`
         ],
-        secretName: 'clickpattern/beta/secrets',
-        secretArn: `arn:aws:secretsmanager:us-east-1:108271872087:secret:clickpattern/beta/secrets-bfU2sy`
+        secretName: 'meta-capi/beta/secrets',
+        secretArn: `arn:aws:secretsmanager:us-east-1:108271872087:secret:meta-capi/beta/secrets-E088TL`
     },
 
     resourceNames: {
