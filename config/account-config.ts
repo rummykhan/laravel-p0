@@ -1,7 +1,7 @@
 import { AWSAccount, AwsRegion, AccountsByStage } from "./types";
 
 export const BetaAccount: AWSAccount = {
-  account: '713505378742',
+  account: '108271872087',
   region: AwsRegion.IAD,
   isProd: false,
 };

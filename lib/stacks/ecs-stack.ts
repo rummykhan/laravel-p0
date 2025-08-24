@@ -496,10 +496,8 @@ export class EcsStack extends cdk.Stack {
 
             // Create SSL certificate if requested
             if (environmentConfig.domainConfig.certificateArn) {
-
                 // Create the SSL certificate with DNS validation
                 this.certificate = certificatemanager.Certificate.fromCertificateArn(this, `ImportedCertificate`, environmentConfig.domainConfig.certificateArn);
-
             } else {
                 // Create the SSL certificate with DNS validation
                 this.certificate = this.createCertificate(

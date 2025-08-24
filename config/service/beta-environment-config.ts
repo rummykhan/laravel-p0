@@ -9,10 +9,9 @@ export default {
     serviceName: `METACAPIWebService`,
     
     domainConfig: {
-        hostedZoneName: `manzoorr.people.amazon.dev`,
-        hostedZoneId: `Z09225873K47ZE52T0G6T`,
-        domainName: `meta-capi.manzoorr.people.amazon.dev`,
-        certificateArn: `arn:aws:acm:us-east-1:713505378742:certificate/18f915bb-54a6-434e-a528-934d2c164d39`,
+        hostedZoneName: `clickpattern.dev`,
+        hostedZoneId: `Z03233892327430JQ2XMI`,
+        domainName: `meta.clickpattern.dev`
     },
     
     /** Beta-specific build configuration overrides */
@@ -95,8 +94,8 @@ export default {
             `CLERK_SECRET_KEY`,
             `DEBUG_TOKEN`
         ],
-        secretName: 'application/beta/secrets',
-        secretArn: `arn:aws:secretsmanager:us-east-1:713505378742:secret:application/beta/secrets-LzUdwZ`
+        secretName: 'clickpattern/beta/secrets',
+        secretArn: `arn:aws:secretsmanager:us-east-1:108271872087:secret:clickpattern/beta/secrets-bfU2sy`
     },
 
     resourceNames: {
