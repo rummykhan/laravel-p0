@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
 import Pipeline from '../lib/pipeline';
-import {Stage} from '../config/types'
 import { PipelineAccount } from '../config/account-config';
-import { resolveConfiguration } from '../lib/utils/simple-config-resolver';
+import applicationConfig from '../config/application-config';
 
 const app = new cdk.App();
 
@@ -15,5 +14,5 @@ new Pipeline(app, 'Pipeline', {
     account: PipelineAccount.account,
     region: PipelineAccount.region
   },
-  applicationConfig: resolveConfiguration(Stage.beta.toLowerCase()),
+  applicationConfig: applicationConfig,
 });

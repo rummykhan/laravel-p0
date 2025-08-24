@@ -13,30 +13,27 @@ export default class Pipeline extends cdk.Stack {
   constructor(scope: Construct, id: string, props: PipelineProps) {
     super(scope, id, props);
 
-    // Get configuration for the primary deployment stage to use in pipeline setup
-    const { applicationConfig } = props;
-
-    const { infraRepository, serviceRepository } = applicationConfig.repositories;
+    const { infraRepository, serviceRepository } = props.applicationConfig.repositories;
 
     // Create source for CDK app repository with explicit trigger configuration
     const infraRepositoryAsSource = CodePipelineSource.gitHub(infraRepository.repoString, infraRepository.branch, {
-      authentication: cdk.SecretValue.secretsManager(applicationConfig.githubTokenSecretName),
+      authentication: cdk.SecretValue.secretsManager(props.applicationConfig.githubTokenSecretName),
       trigger: cdk.aws_codepipeline_actions.GitHubTrigger.WEBHOOK // Explicit webhook trigger
     });
 
     // Create source for Users Web App repository with explicit trigger configuration
     const serviceRepositoryAsSource = CodePipelineSource.gitHub(serviceRepository.repoString, serviceRepository.branch, {
-      authentication: cdk.SecretValue.secretsManager(applicationConfig.githubTokenSecretName),
+      authentication: cdk.SecretValue.secretsManager(props.applicationConfig.githubTokenSecretName),
       trigger: cdk.aws_codepipeline_actions.GitHubTrigger.WEBHOOK // Explicit webhook trigger
     });
 
-    const pipeline = new CodePipeline(this, applicationConfig.applicationName, {
-      pipelineName: applicationConfig.applicationName,
+    const pipeline = new CodePipeline(this, props.applicationConfig.applicationName, {
+      pipelineName: props.applicationConfig.applicationName,
 
       synth: new ShellStep('Synth', {
         input: infraRepositoryAsSource,
         additionalInputs: {
-          [applicationConfig.sourceDirectory]: serviceRepositoryAsSource,
+          [props.applicationConfig.sourceDirectory]: serviceRepositoryAsSource,
         },
         commands: [
           // Phase 1: Build CDK Infrastructure Code
@@ -49,17 +46,17 @@ export default class Pipeline extends cdk.Stack {
 
           // Phase 2: Build and Push Application Docker Image
           'echo "=== Phase 2: Building Application ==="',
-          `echo "Switching to application directory: ${applicationConfig.sourceDirectory}..."`,
-          `cd ${applicationConfig.sourceDirectory}`,
+          `echo "Switching to application directory: ${props.applicationConfig.sourceDirectory}..."`,
+          `cd ${props.applicationConfig.sourceDirectory}`,
           'echo "Installing application dependencies..."',
-          ...this.generateBuildCommands(applicationConfig),
+          ...this.generateBuildCommands(props.applicationConfig),
 
           // Phase 3: Docker Image Build and Push
           'echo "=== Phase 3: Docker Image Build and Push ==="',
           'echo "Setting up AWS environment variables..."',
           'export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)',
           'export AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}',
-          `export ECR_REPOSITORY_URI=\${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_DEFAULT_REGION}.amazonaws.com/${applicationConfig.resourceNames.ecrRepositoryName}`,
+          `export ECR_REPOSITORY_URI=\${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_DEFAULT_REGION}.amazonaws.com/${props.applicationConfig.resourceNames.ecrRepositoryName}`,
           'echo "AWS Account ID: ${AWS_ACCOUNT_ID}"',
           'echo "AWS Region: ${AWS_DEFAULT_REGION}"',
           'echo "ECR Repository URI: ${ECR_REPOSITORY_URI}"',
@@ -70,7 +67,7 @@ export default class Pipeline extends cdk.Stack {
 
           // Create ECR repository if it doesn't exist (will be handled by CDK, but this ensures it exists during build)
           'echo "Ensuring ECR repository exists..."',
-          `aws ecr describe-repositories --repository-names ${applicationConfig.resourceNames.ecrRepositoryName} --region \${AWS_DEFAULT_REGION} || aws ecr create-repository --repository-name ${applicationConfig.resourceNames.ecrRepositoryName} --region \${AWS_DEFAULT_REGION}`,
+          `aws ecr describe-repositories --repository-names ${props.applicationConfig.resourceNames.ecrRepositoryName} --region \${AWS_DEFAULT_REGION} || aws ecr create-repository --repository-name ${props.applicationConfig.resourceNames.ecrRepositoryName} --region \${AWS_DEFAULT_REGION}`,
 
           // Build Docker image with build timestamp as tag
           'echo "Building Docker image..."',
@@ -84,7 +81,7 @@ export default class Pipeline extends cdk.Stack {
           'ls -la',
 
           // Build with multiple tags for better tracking and build args from config
-          ...this.generateDockerBuildCommand(applicationConfig),
+          ...this.generateDockerBuildCommand(props.applicationConfig),
 
           // Push Docker image to ECR with error handling
           'echo "Pushing Docker images to ECR..."',
@@ -164,17 +161,19 @@ export default class Pipeline extends cdk.Stack {
     });
 
     // Deploy to all configured environments
-    const deploymentStages = this.convertAccountsToDeploymentStages(applicationConfig.accounts);
-    
+    const deploymentStages = this.convertAccountsToDeploymentStages(props.applicationConfig.accounts);
+
     deploymentStages.forEach((deploymentStage) => {
       // Add the stage to the pipeline
-      pipeline.addStage(new ApplicationStage(this, `stage-${deploymentStage.stage}-${this.getRegionKey(deploymentStage.region)}`, {
-        env: {
-          account: deploymentStage.accountId,
-          region: deploymentStage.region
-        },
-        stageName: `${deploymentStage.stage.toLowerCase()}-${this.getRegionKey(deploymentStage.region)}`,
-      }));
+      pipeline.addStage(new ApplicationStage(this, `stage-${deploymentStage.stage}-${this.getRegionKey(deploymentStage.region)}`,
+        props.applicationConfig,
+        {
+          env: {
+            account: deploymentStage.accountId,
+            region: deploymentStage.region
+          },
+          stageName: `${deploymentStage.stage.toLowerCase()}-${this.getRegionKey(deploymentStage.region)}`,
+        }));
     });
   }
 

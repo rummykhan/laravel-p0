@@ -10,11 +10,13 @@ import { EcsEnvironmentConfig } from "../../config/types";
  */
 
 /**
- * Base application configuration interface containing default application settings
- * without resolved stage information or generated resource names.
- * Used as a template for creating resolved configurations.
+ * Application configuration interface containing all application settings
+ * including resolved stage information and generated resource names.
+ * 
+ * This interface represents the complete, ready-to-use configuration
+ * with resource names generated during initialization.
  */
-export interface BaseApplicationConfig {
+export interface ApplicationConfig {
   // Application identification
   /** Unique identifier for the application (used in resource naming) */
   applicationName: string;
@@ -61,19 +63,7 @@ export interface BaseApplicationConfig {
   buildCommands: string[];
   /** Docker build arguments passed during image build */
   dockerBuildArgs: { [key: string]: string };
-}
 
-/**
- * Application configuration interface containing all application settings
- * including resolved stage information and generated resource names.
- * 
- * This interface represents the complete, ready-to-use configuration
- * after environment-specific processing and resource name generation.
- */
-export interface ApplicationConfig extends BaseApplicationConfig {
-  // Resolution metadata (added during configuration resolution)
-  /** The stage this configuration was resolved for */
-  resolvedStage: string;
   /** Generated resource names for this configuration */
   resourceNames: ResourceNames;
 }
@@ -97,7 +87,7 @@ export interface EnvironmentConfig {
   };
 
   /** Application configuration overrides for this environment */
-  applicationOverrides?: Partial<BaseApplicationConfig>;
+  applicationOverrides?: Partial<Omit<ApplicationConfig, 'resolvedStage' | 'resourceNames'>>;
 
   /** Build configuration overrides for this environment */
   buildOverrides?: {
