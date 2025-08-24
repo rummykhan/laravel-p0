@@ -9,6 +9,7 @@ export default {
     serviceName: `METACAPIWebService`,
     
     domainConfig: {
+        hostedZoneName: `manzoorr.people.amazon.dev`,
         hostedZoneId: `Z09225873K47ZE52T0G6T`,
         domainName: `meta-capi.manzoorr.people.amazon.dev`,
         createCertificates: true,

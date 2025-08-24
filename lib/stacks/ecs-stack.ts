@@ -8,9 +8,12 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as certificatemanager from 'aws-cdk-lib/aws-certificatemanager';
+import * as route53targets from 'aws-cdk-lib/aws-route53-targets';
 
 import { validateEnvironmentConfig } from '../../config/deployment-config';
-import { EnvironmentServiceConfig, SecretsConfig } from '../types/configuration-types';
+import { EnvironmentServiceConfig, SecretsConfig, DomainConfig } from '../types/configuration-types';
 
 export interface EcsStackProps extends cdk.StackProps {
     vpc: ec2.IVpc;
@@ -32,6 +35,8 @@ export class EcsStack extends cdk.Stack {
     public readonly ecsService: ecs.FargateService;
     public readonly scalableTarget: ecs.ScalableTaskCount;
     public readonly secret?: secretsmanager.ISecret;
+    public readonly certificate?: certificatemanager.Certificate;
+    public readonly dnsRecord?: route53.ARecord;
 
 
     constructor(scope: Construct, id: string, props: EcsStackProps) {
@@ -39,7 +44,7 @@ export class EcsStack extends cdk.Stack {
 
         // Get required parameters from props
         const stage = props.stage;
-        
+
         const environmentConfig = props.environmentConfig;
         const ecsConfig = environmentConfig.ecsConfig;
 
@@ -482,9 +487,33 @@ export class EcsStack extends cdk.Stack {
             });
         }
 
-        // VPC endpoint outputs are now managed by VpcStack
+        // Domain configuration validation and setup
+        if (environmentConfig.domainConfig) {
+            const hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, `HZ-${environmentConfig.domainConfig.hostedZoneName}`, {
+                hostedZoneId: environmentConfig.domainConfig.hostedZoneId,
+                zoneName: environmentConfig.domainConfig.hostedZoneName
+            });
 
+            // Create SSL certificate if requested
+            if (environmentConfig.domainConfig.createCertificates) {
+                // Create the SSL certificate with DNS validation
+                this.certificate = this.createCertificate(
+                    environmentConfig.domainConfig.domainName,
+                    hostedZone
+                );
 
+                // Configure HTTPS listener with the created certificate
+                this.configureHttpsListener(this.certificate);
+
+            }
+
+            // Create Route53 DNS record pointing to ALB
+
+            this.dnsRecord = this.createDnsRecord(
+                environmentConfig.domainConfig.domainName,
+                hostedZone
+            );
+        }
 
         // Create ECS service with environment-specific deployment configuration
         this.ecsService = new ecs.FargateService(this, 'ApplicationService', {
@@ -868,6 +897,35 @@ fields @timestamp, @message
             exportName: `${this.stackName}-EcsServiceName`,
         });
 
+        // Add Certificate Manager outputs if certificate is created
+        if (this.certificate) {
+            new cdk.CfnOutput(this, 'CertificateArn', {
+                value: this.certificate.certificateArn,
+                description: 'SSL Certificate ARN from Certificate Manager',
+                exportName: `${this.stackName}-CertificateArn`,
+            });
+
+            // Add HTTPS endpoint URL output when HTTPS is configured
+            // Use custom domain name if DNS record is created, otherwise use ALB DNS name
+            const httpsUrl = this.dnsRecord
+                ? `https://${this.dnsRecord.domainName}`
+                : `https://${this.applicationLoadBalancer.loadBalancerDnsName}`;
+
+            new cdk.CfnOutput(this, 'HttpsEndpointUrl', {
+                value: httpsUrl,
+                description: 'HTTPS endpoint URL for the application',
+                exportName: `${this.stackName}-HttpsEndpointUrl`,
+            });
+        }
+
+        // Add Route53 DNS record outputs if DNS record is created
+        if (this.dnsRecord) {
+            new cdk.CfnOutput(this, 'DnsRecordName', {
+                value: this.dnsRecord.domainName,
+                description: 'Route53 DNS record name pointing to ALB',
+                exportName: `${this.stackName}-DnsRecordName`,
+            });
+        }
 
 
         // Auto-scaling outputs
@@ -963,5 +1021,102 @@ fields @timestamp, @message
             // Each key in the JSON secret becomes a separate environment variable
             container.addSecret(secretKey, ecs.Secret.fromSecretsManager(secret, secretKey));
         });
+    }
+
+    /**
+     * Creates an SSL certificate using AWS Certificate Manager with DNS validation.
+     * The certificate is created for the specified domain name and validated using
+     * the provided Route53 hosted zone for automatic DNS validation.
+     * 
+     * @param domainName - The domain name for which to create the certificate
+     * @param hostedZone - The Route53 hosted zone used for DNS validation
+     * @returns The created Certificate instance
+     * @throws Error if certificate creation fails
+     */
+    private createCertificate(domainName: string, hostedZone: route53.IHostedZone): certificatemanager.Certificate {
+        // Create SSL certificate with DNS validation
+        const certificate = new certificatemanager.Certificate(this, 'SslCertificate', {
+            // Domain name for the certificate
+            domainName: domainName,
+
+            // Use DNS validation for automatic certificate validation
+            validation: certificatemanager.CertificateValidation.fromDns(hostedZone),
+
+            // Certificate description for identification
+            certificateName: `${this.stackName}-ssl-certificate`,
+
+            // Subject alternative names (SAN) - could be extended for wildcard certificates
+            // subjectAlternativeNames: [`*.${domainName}`], // Uncomment for wildcard support
+        });
+
+        return certificate;
+    }
+
+    /**
+     * Configures HTTPS listener on port 443 for the Application Load Balancer.
+     * Adds HTTPS listener with the provided SSL certificate while maintaining
+     * the existing HTTP listener for backward compatibility.
+     * 
+     * @param certificate - The SSL certificate to use for the HTTPS listener
+     * @throws Error if HTTPS listener configuration fails
+     */
+    private configureHttpsListener(certificate: certificatemanager.Certificate): void {
+        try {
+            // Add HTTPS listener on port 443 with SSL certificate
+            this.applicationLoadBalancer.addListener('HttpsListener', {
+                port: 443,
+                protocol: elbv2.ApplicationProtocol.HTTPS,
+                // Use the provided SSL certificate
+                certificates: [certificate],
+                // Default action: forward traffic to the same target group as HTTP
+                defaultAction: elbv2.ListenerAction.forward([this.targetGroup]),
+            });
+        } catch (error) {
+            throw new Error(
+                `Failed to configure HTTPS listener: ${error instanceof Error ? error.message : String(error)}. ` +
+                'Please ensure the certificate is valid and the ALB is properly configured.'
+            );
+        }
+    }
+
+    /**
+     * Creates a Route53 alias A record pointing to the Application Load Balancer.
+     * Uses Route53 alias target for better performance and automatic health checking.
+     * The alias record automatically updates when the ALB DNS name changes.
+     * 
+     * @param domainName - The domain name for the DNS record
+     * @param hostedZone - The Route53 hosted zone where the record will be created
+     * @returns The created ARecord instance
+     * @throws Error if DNS record creation fails
+     */
+    private createDnsRecord(domainName: string, hostedZone: route53.IHostedZone): route53.ARecord {
+        // Create alias A record pointing to the ALB
+        const dnsRecord = new route53.ARecord(this, 'DnsRecord', {
+            // The hosted zone where the record will be created
+            zone: hostedZone,
+
+            // The domain name for the A record
+            recordName: domainName,
+
+            // Use alias target pointing to the ALB for better performance
+            target: route53.RecordTarget.fromAlias(
+                new route53targets.LoadBalancerTarget(this.applicationLoadBalancer)
+            ),
+
+            // Set TTL to undefined for alias records (AWS manages TTL automatically)
+            ttl: undefined,
+
+            // Comment for identification in Route53 console
+            comment: `Alias record for ${domainName} pointing to ALB ${this.applicationLoadBalancer.loadBalancerName}`,
+
+            // Delete policy - remove record when stack is deleted
+            deleteExisting: false, // Don't delete existing records with same name
+        });
+
+        // Note: evaluateTargetHealth is set to true by default for LoadBalancerTarget
+        // This enables automatic health checking and failover as per requirement 3.2
+
+        return dnsRecord;
+
     }
 }

@@ -127,6 +127,7 @@ export interface EnvironmentServiceConfig {
  * Service domain config.
  */
 export interface DomainConfig {
+  hostedZoneName: string;
   hostedZoneId: string;
   domainName: string;
   createCertificates: boolean;
