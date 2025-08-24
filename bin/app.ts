@@ -8,7 +8,7 @@ const app = new cdk.App();
 
 // Create a single pipeline that will deploy to multiple environments
 // The pipeline itself runs in a central account (usually tools/CICD account)
-new Pipeline(app, 'Pipeline', {
+new Pipeline(app, 'MetaCAPIPipeline', {
   // Pipeline stack environment - where the pipeline infrastructure runs
   env: {
     account: PipelineAccount.account,
