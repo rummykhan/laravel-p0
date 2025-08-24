@@ -16,13 +16,13 @@ export default class Pipeline extends cdk.Stack {
     const { infraRepository, serviceRepository } = props.applicationConfig.repositories;
 
     // Create source for CDK app repository with explicit trigger configuration
-    const infraRepositoryAsSource = CodePipelineSource.gitHub(infraRepository.repoString, infraRepository.branch, {
+    const infraRepositorySource = CodePipelineSource.gitHub(infraRepository.repoString, infraRepository.branch, {
       authentication: cdk.SecretValue.secretsManager(props.applicationConfig.githubTokenSecretName),
       trigger: cdk.aws_codepipeline_actions.GitHubTrigger.WEBHOOK // Explicit webhook trigger
     });
 
     // Create source for Users Web App repository with explicit trigger configuration
-    const serviceRepositoryAsSource = CodePipelineSource.gitHub(serviceRepository.repoString, serviceRepository.branch, {
+    const serviceRepositorySource = CodePipelineSource.gitHub(serviceRepository.repoString, serviceRepository.branch, {
       authentication: cdk.SecretValue.secretsManager(props.applicationConfig.githubTokenSecretName),
       trigger: cdk.aws_codepipeline_actions.GitHubTrigger.WEBHOOK // Explicit webhook trigger
     });
@@ -31,9 +31,9 @@ export default class Pipeline extends cdk.Stack {
       pipelineName: props.applicationConfig.applicationName,
 
       synth: new ShellStep('Synth', {
-        input: infraRepositoryAsSource,
+        input: infraRepositorySource,
         additionalInputs: {
-          [props.applicationConfig.sourceDirectory]: serviceRepositoryAsSource,
+          [props.applicationConfig.sourceDirectory]: serviceRepositorySource,
         },
         commands: [
           // Phase 1: Build CDK Infrastructure Code

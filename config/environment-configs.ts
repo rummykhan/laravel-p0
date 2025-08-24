@@ -30,15 +30,6 @@ export const ENVIRONMENT_CONFIGS: Record<string, EnvironmentConfig> = {
      */
     stage: 'beta',
 
-    namingConvention: {
-      /** Don't prefix resource names with stage name */
-      useStagePrefix: false,
-      /** Add stage name as suffix to resource names */
-      useStageSuffix: true,
-      /** Use hyphen as separator between name components */
-      separator: '-'
-    },
-
     /** Beta-specific application configuration overrides */
     applicationOverrides: {
       // Beta environment may use different health check intervals
@@ -124,12 +115,6 @@ export const ENVIRONMENT_CONFIGS: Record<string, EnvironmentConfig> = {
      */
     stage: 'gamma',
 
-    namingConvention: {
-      useStagePrefix: false,
-      useStageSuffix: true,
-      separator: '-'
-    },
-
     applicationOverrides: {
       // Gamma may have production-like settings
     },
@@ -207,12 +192,6 @@ export const ENVIRONMENT_CONFIGS: Record<string, EnvironmentConfig> = {
      * Resources are named with a 'prod' suffix.
      */
     stage: 'prod',
-
-    namingConvention: {
-      useStagePrefix: false,
-      useStageSuffix: true,
-      separator: '-'
-    },
 
     applicationOverrides: {
       // Production-specific overrides

@@ -43,15 +43,6 @@ const APPLICATION_CONFIG: ApplicationConfig = {
   containerPort: 3000,
   healthCheckPath: '/api/health',
 
-  // ECS configuration
-  serviceName: `${APP_NAME}-service`,
-  clusterNameSuffix: 'cluster',
-  taskDefinitionFamily: APP_NAME,
-
-  // Load balancer configuration
-  albName: `${APP_NAME}-alb`,
-  targetGroupName: `${APP_NAME}-tg`,
-
   // Build configuration
   buildCommands: [
     'npm ci',

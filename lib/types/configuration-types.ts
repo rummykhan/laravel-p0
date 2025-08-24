@@ -46,18 +46,6 @@ export interface ApplicationConfig {
   /** Health check endpoint path */
   healthCheckPath: string;
 
-  // Resource naming (may be overridden per environment)
-  /** ECS service name */
-  serviceName: string;
-  /** Suffix for ECS cluster name (will be combined with environment) */
-  clusterNameSuffix: string;
-  /** ECS task definition family name */
-  taskDefinitionFamily: string;
-  /** Application Load Balancer name */
-  albName: string;
-  /** Target group name for the load balancer */
-  targetGroupName: string;
-
   // Build configuration (may be overridden per environment)
   /** Commands to run during the build process */
   buildCommands: string[];
@@ -75,16 +63,6 @@ export interface ApplicationConfig {
 export interface EnvironmentConfig {
   /** Deployment stage this configuration applies to */
   stage: string;
-
-  /** Resource naming patterns for this environment */
-  namingConvention: {
-    /** Whether to prefix resource names with stage name */
-    useStagePrefix: boolean;
-    /** Whether to suffix resource names with stage name */
-    useStageSuffix: boolean;
-    /** Separator character between name components */
-    separator: string;
-  };
 
   /** Application configuration overrides for this environment */
   applicationOverrides?: Partial<Omit<ApplicationConfig, 'resolvedStage' | 'resourceNames'>>;
