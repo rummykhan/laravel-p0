@@ -12,7 +12,7 @@ export default {
         hostedZoneName: `manzoorr.people.amazon.dev`,
         hostedZoneId: `Z09225873K47ZE52T0G6T`,
         domainName: `meta-capi.manzoorr.people.amazon.dev`,
-        createCertificates: true,
+        certificateArn: `arn:aws:acm:us-east-1:713505378742:certificate/18f915bb-54a6-434e-a528-934d2c164d39`,
     },
     
     /** Beta-specific build configuration overrides */

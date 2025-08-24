@@ -254,6 +254,118 @@ environmentVariables: {
 }
 ```
 
+### Domain Configuration
+
+The application supports custom domain names with automatic SSL certificate management and DNS configuration. The domain setup requires a parent domain to be manually configured in Route53, then the application can create subdomains automatically.
+
+#### Prerequisites
+
+1. **Parent Domain Setup**: The parent domain must already exist in Route53 with a hosted zone
+2. **Hosted Zone Information**: You need the hosted zone ID and parent domain name
+3. **Subdomain Planning**: Decide on the subdomain name you want to create
+
+#### Configuration Structure
+
+Each environment can have its own domain configuration in the environment-specific config file:
+
+```typescript
+domainConfig: {
+    hostedZoneName: 'example.com',                    // Parent domain (must exist in Route53)
+    hostedZoneId: 'Z1234567890ABC',                   // Hosted zone ID from Route53
+    domainName: 'api.example.com',                    // Full subdomain to create
+    certificateArn: 'arn:aws:acm:...' // Optional: Use existing certificate
+}
+```
+
+#### Automatic Setup During Deployment
+
+When domain configuration is provided, the ECS stack automatically:
+
+1. **SSL Certificate Management**:
+   - Creates a new SSL certificate using AWS Certificate Manager (ACM)
+   - Uses DNS validation for automatic certificate verification
+   - Alternatively, imports an existing certificate if `certificateArn` is provided
+
+2. **Load Balancer Configuration**:
+   - Configures HTTPS listener on port 443 with the SSL certificate
+   - Maintains HTTP listener on port 80 for backward compatibility
+   - Binds the certificate to the Application Load Balancer
+
+3. **DNS Record Creation**:
+   - Creates Route53 A record (alias) pointing to the load balancer
+   - Uses alias target for better performance and automatic health checking
+   - Automatically updates if load balancer DNS name changes
+
+#### Setup Process
+
+1. **Verify Parent Domain**: Ensure your parent domain is configured in Route53
+   ```bash
+   aws route53 list-hosted-zones --query "HostedZones[?Name=='example.com.']"
+   ```
+
+2. **Get Hosted Zone Information**:
+   - Note the `Id` (hosted zone ID) and `Name` (domain name) from the output
+   - Remove the `/hostedzone/` prefix from the ID if present
+
+3. **Configure Environment**: Update your environment config file (e.g., `config/service/beta-environment-config.ts`):
+   ```typescript
+   domainConfig: {
+       hostedZoneName: 'your-domain.com',
+       hostedZoneId: 'Z1234567890ABC',
+       domainName: 'api-beta.your-domain.com',
+       // certificateArn: 'arn:aws:acm:...' // Optional: use existing certificate
+   }
+   ```
+
+4. **Deploy**: The domain configuration will be applied during the next deployment
+
+#### Domain Configuration Examples
+
+**Development Environment:**
+```typescript
+domainConfig: {
+    hostedZoneName: 'dev.company.com',
+    hostedZoneId: 'Z1111111111111',
+    domainName: 'api-dev.dev.company.com'
+}
+```
+
+**Production Environment:**
+```typescript
+domainConfig: {
+    hostedZoneName: 'company.com',
+    hostedZoneId: 'Z2222222222222',
+    domainName: 'api.company.com',
+    certificateArn: 'arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012'
+}
+```
+
+#### Security Features
+
+- **Automatic HTTPS**: All traffic is secured with SSL/TLS certificates
+- **DNS Validation**: Certificates are automatically validated using DNS records
+- **Health Checking**: Route53 alias records include automatic health checking
+- **Certificate Renewal**: ACM automatically renews certificates before expiration
+
+#### Troubleshooting Domain Configuration
+
+**Common Issues:**
+- **Certificate Validation Timeout**: Ensure the hosted zone has proper NS records configured
+- **DNS Resolution Issues**: Verify the parent domain's DNS configuration
+- **Permission Errors**: Ensure the deployment role has Route53 and ACM permissions
+
+**Validation Commands:**
+```bash
+# Check certificate status
+aws acm list-certificates --region us-east-1
+
+# Verify DNS record creation
+nslookup api.your-domain.com
+
+# Test HTTPS endpoint
+curl -I https://api.your-domain.com/api/health
+```
+
 ### Service Build Configuration
 
 The application uses a centralized service build configuration in `application-config.ts`:

@@ -35,7 +35,7 @@ export class EcsStack extends cdk.Stack {
     public readonly ecsService: ecs.FargateService;
     public readonly scalableTarget: ecs.ScalableTaskCount;
     public readonly secret?: secretsmanager.ISecret;
-    public readonly certificate?: certificatemanager.Certificate;
+    public readonly certificate?: certificatemanager.ICertificate;
     public readonly dnsRecord?: route53.ARecord;
 
 
@@ -495,20 +495,23 @@ export class EcsStack extends cdk.Stack {
             });
 
             // Create SSL certificate if requested
-            if (environmentConfig.domainConfig.createCertificates) {
+            if (environmentConfig.domainConfig.certificateArn) {
+
+                // Create the SSL certificate with DNS validation
+                this.certificate = certificatemanager.Certificate.fromCertificateArn(this, `ImportedCertificate`, environmentConfig.domainConfig.certificateArn);
+
+            } else {
                 // Create the SSL certificate with DNS validation
                 this.certificate = this.createCertificate(
                     environmentConfig.domainConfig.domainName,
                     hostedZone
                 );
-
-                // Configure HTTPS listener with the created certificate
-                this.configureHttpsListener(this.certificate);
-
             }
 
-            // Create Route53 DNS record pointing to ALB
+            // Configure HTTPS listener with the created certificate
+            this.configureHttpsListener(this.certificate);
 
+            // Create Route53 DNS record pointing to ALB
             this.dnsRecord = this.createDnsRecord(
                 environmentConfig.domainConfig.domainName,
                 hostedZone
@@ -898,25 +901,25 @@ fields @timestamp, @message
         });
 
         // Add Certificate Manager outputs if certificate is created
-        if (this.certificate) {
-            new cdk.CfnOutput(this, 'CertificateArn', {
-                value: this.certificate.certificateArn,
-                description: 'SSL Certificate ARN from Certificate Manager',
-                exportName: `${this.stackName}-CertificateArn`,
-            });
 
-            // Add HTTPS endpoint URL output when HTTPS is configured
-            // Use custom domain name if DNS record is created, otherwise use ALB DNS name
-            const httpsUrl = this.dnsRecord
-                ? `https://${this.dnsRecord.domainName}`
-                : `https://${this.applicationLoadBalancer.loadBalancerDnsName}`;
+        new cdk.CfnOutput(this, 'CertificateArn', {
+            value: this.certificate ? this.certificate.certificateArn : (environmentConfig.domainConfig.certificateArn ?? `invalid-arn`),
+            description: 'SSL Certificate ARN from Certificate Manager',
+            exportName: `${this.stackName}-CertificateArn`,
+        });
 
-            new cdk.CfnOutput(this, 'HttpsEndpointUrl', {
-                value: httpsUrl,
-                description: 'HTTPS endpoint URL for the application',
-                exportName: `${this.stackName}-HttpsEndpointUrl`,
-            });
-        }
+        // Add HTTPS endpoint URL output when HTTPS is configured
+        // Use custom domain name if DNS record is created, otherwise use ALB DNS name
+        const httpsUrl = this.dnsRecord
+            ? `https://${this.dnsRecord.domainName}`
+            : `https://${this.applicationLoadBalancer.loadBalancerDnsName}`;
+
+        new cdk.CfnOutput(this, 'HttpsEndpointUrl', {
+            value: httpsUrl,
+            description: 'HTTPS endpoint URL for the application',
+            exportName: `${this.stackName}-HttpsEndpointUrl`,
+        });
+
 
         // Add Route53 DNS record outputs if DNS record is created
         if (this.dnsRecord) {
@@ -1060,23 +1063,16 @@ fields @timestamp, @message
      * @param certificate - The SSL certificate to use for the HTTPS listener
      * @throws Error if HTTPS listener configuration fails
      */
-    private configureHttpsListener(certificate: certificatemanager.Certificate): void {
-        try {
-            // Add HTTPS listener on port 443 with SSL certificate
-            this.applicationLoadBalancer.addListener('HttpsListener', {
-                port: 443,
-                protocol: elbv2.ApplicationProtocol.HTTPS,
-                // Use the provided SSL certificate
-                certificates: [certificate],
-                // Default action: forward traffic to the same target group as HTTP
-                defaultAction: elbv2.ListenerAction.forward([this.targetGroup]),
-            });
-        } catch (error) {
-            throw new Error(
-                `Failed to configure HTTPS listener: ${error instanceof Error ? error.message : String(error)}. ` +
-                'Please ensure the certificate is valid and the ALB is properly configured.'
-            );
-        }
+    private configureHttpsListener(certificate: certificatemanager.ICertificate): void {
+        // Add HTTPS listener on port 443 with SSL certificate
+        this.applicationLoadBalancer.addListener('HttpsListener', {
+            port: 443,
+            protocol: elbv2.ApplicationProtocol.HTTPS,
+            // Use the provided SSL certificate
+            certificates: [certificate],
+            // Default action: forward traffic to the same target group as HTTP
+            defaultAction: elbv2.ListenerAction.forward([this.targetGroup]),
+        });
     }
 
     /**

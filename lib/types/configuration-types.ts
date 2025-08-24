@@ -130,7 +130,7 @@ export interface DomainConfig {
   hostedZoneName: string;
   hostedZoneId: string;
   domainName: string;
-  createCertificates: boolean;
+  certificateArn?: string;
 }
 
 /**
