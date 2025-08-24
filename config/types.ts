@@ -81,6 +81,9 @@ export interface EcsEnvironmentConfig {
 
   // Security configuration
   enableExecuteCommand: boolean;
+
+  containerPort: number;
+  healthCheckPath: string;
 }
 
 // Re-export configuration types for convenient access

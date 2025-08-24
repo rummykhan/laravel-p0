@@ -13,7 +13,7 @@ export default class Pipeline extends cdk.Stack {
   constructor(scope: Construct, id: string, props: PipelineProps) {
     super(scope, id, props);
 
-    const { infraRepository, serviceRepository } = props.applicationConfig.repositories;
+    const { infra: infraRepository, service: serviceRepository } = props.applicationConfig.repositories;
 
     // Create source for CDK app repository with explicit trigger configuration
     const infraRepositorySource = CodePipelineSource.gitHub(infraRepository.repoString, infraRepository.branch, {
@@ -27,13 +27,13 @@ export default class Pipeline extends cdk.Stack {
       trigger: cdk.aws_codepipeline_actions.GitHubTrigger.WEBHOOK // Explicit webhook trigger
     });
 
-    const pipeline = new CodePipeline(this, props.applicationConfig.applicationName, {
+    const pipeline = new CodePipeline(this, `CodePipeline-${props.applicationConfig.applicationName}`, {
       pipelineName: props.applicationConfig.applicationName,
 
       synth: new ShellStep('Synth', {
         input: infraRepositorySource,
         additionalInputs: {
-          [props.applicationConfig.sourceDirectory]: serviceRepositorySource,
+          [props.applicationConfig.serviceBuildConfig.sourceDirectory]: serviceRepositorySource,
         },
         commands: [
           // Phase 1: Build CDK Infrastructure Code
@@ -46,8 +46,8 @@ export default class Pipeline extends cdk.Stack {
 
           // Phase 2: Build and Push Application Docker Image
           'echo "=== Phase 2: Building Application ==="',
-          `echo "Switching to application directory: ${props.applicationConfig.sourceDirectory}..."`,
-          `cd ${props.applicationConfig.sourceDirectory}`,
+          `echo "Switching to application directory: ${props.applicationConfig.serviceBuildConfig.sourceDirectory}..."`,
+          `cd ${props.applicationConfig.serviceBuildConfig.sourceDirectory}`,
           'echo "Installing application dependencies..."',
           ...this.generateBuildCommands(props.applicationConfig),
 
@@ -56,7 +56,7 @@ export default class Pipeline extends cdk.Stack {
           'echo "Setting up AWS environment variables..."',
           'export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)',
           'export AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}',
-          `export ECR_REPOSITORY_URI=\${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_DEFAULT_REGION}.amazonaws.com/${props.applicationConfig.resourceNames.ecrRepositoryName}`,
+          `export ECR_REPOSITORY_URI=\${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_DEFAULT_REGION}.amazonaws.com/${props.applicationConfig.serviceBuildConfig.ecrRepositoryName}`,
           'echo "AWS Account ID: ${AWS_ACCOUNT_ID}"',
           'echo "AWS Region: ${AWS_DEFAULT_REGION}"',
           'echo "ECR Repository URI: ${ECR_REPOSITORY_URI}"',
@@ -67,7 +67,7 @@ export default class Pipeline extends cdk.Stack {
 
           // Create ECR repository if it doesn't exist (will be handled by CDK, but this ensures it exists during build)
           'echo "Ensuring ECR repository exists..."',
-          `aws ecr describe-repositories --repository-names ${props.applicationConfig.resourceNames.ecrRepositoryName} --region \${AWS_DEFAULT_REGION} || aws ecr create-repository --repository-name ${props.applicationConfig.resourceNames.ecrRepositoryName} --region \${AWS_DEFAULT_REGION}`,
+          `aws ecr describe-repositories --repository-names ${props.applicationConfig.serviceBuildConfig.ecrRepositoryName} --region \${AWS_DEFAULT_REGION} || aws ecr create-repository --repository-name ${props.applicationConfig.serviceBuildConfig.ecrRepositoryName} --region \${AWS_DEFAULT_REGION}`,
 
           // Build Docker image with build timestamp as tag
           'echo "Building Docker image..."',
@@ -192,7 +192,7 @@ export default class Pipeline extends cdk.Stack {
     const commands: string[] = [];
 
     // Add each configured build command with echo for visibility
-    config.buildCommands.forEach((command, index) => {
+    config.serviceBuildConfig.buildCommands.forEach((command, index) => {
       commands.push(`echo "Running build command ${index + 1}: ${command}"`);
       commands.push(command);
     });
@@ -213,7 +213,7 @@ export default class Pipeline extends cdk.Stack {
    */
   private generateDockerBuildCommand(config: ApplicationConfig): string[] {
     // Build the build args string from configuration
-    const buildArgs = Object.entries(config.dockerBuildArgs)
+    const buildArgs = Object.entries(config.serviceBuildConfig.dockerBuildArgs)
       .map(([key, value]) => `--build-arg ${key}=${value}`)
       .join(' ');
 

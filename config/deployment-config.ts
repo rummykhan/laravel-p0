@@ -1,4 +1,5 @@
 import { getEnvironmentConfig, getAvailableStages, isValidStage } from './environment-configs';
+import { EcsEnvironmentConfig } from './types';
 
 
 // Helper function to validate environment configuration
@@ -8,9 +9,11 @@ export function validateEnvironmentConfig(stage: string): boolean {
   if (!envConfig) {
     throw new Error(`No environment configuration found for stage: ${stage}`);
   }
-
-  const { ecsConfig } = envConfig;
   
+  return validateEcsConfig(envConfig.serviceConfig.ecsConfig);
+}
+
+function validateEcsConfig(ecsConfig: EcsEnvironmentConfig){
   // Validate CPU and memory combinations (Fargate requirements)
   const validCombinations = [
     { cpu: 256, memoryMin: 512, memoryMax: 2048 },

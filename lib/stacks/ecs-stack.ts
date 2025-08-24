@@ -10,15 +10,12 @@ import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 
 import { validateEnvironmentConfig } from '../../config/deployment-config';
-import { ApplicationConfig, EnvironmentConfig, SecretsConfig } from '../types/configuration-types';
+import { EnvironmentServiceConfig, SecretsConfig } from '../types/configuration-types';
 
 export interface EcsStackProps extends cdk.StackProps {
-    environmentConfig: EnvironmentConfig;
-    stage: string;
-    /** Resolved application configuration with resource names */
-    applicationConfig: ApplicationConfig;
-    /** VPC to use for ECS resources */
     vpc: ec2.IVpc;
+    stage: string;
+    environmentConfig: EnvironmentServiceConfig;
 }
 
 export class EcsStack extends cdk.Stack {
@@ -42,9 +39,9 @@ export class EcsStack extends cdk.Stack {
 
         // Get required parameters from props
         const stage = props.stage;
+        
         const environmentConfig = props.environmentConfig;
         const ecsConfig = environmentConfig.ecsConfig;
-        const appConfig = props.applicationConfig;
 
         // Validate the environment configuration
         validateEnvironmentConfig(stage);
@@ -55,7 +52,7 @@ export class EcsStack extends cdk.Stack {
         // Create ECS Cluster with environment-specific configuration
         this.cluster = new ecs.Cluster(this, 'EcsCluster', {
             vpc: this.vpc,
-            clusterName: appConfig.resourceNames.clusterName,
+            clusterName: environmentConfig.resourceNames.clusterName,
             // Enable CloudWatch Container Insights based on environment configuration
             containerInsightsV2: environmentConfig.monitoring?.enableContainerInsights ?
                 ecs.ContainerInsights.ENABLED :
@@ -63,7 +60,7 @@ export class EcsStack extends cdk.Stack {
         });
 
         // Reference existing ECR repository created during synth step
-        this.ecrRepository = ecr.Repository.fromRepositoryName(this, 'ApplicationRepository', appConfig.resourceNames.ecrRepositoryName);
+        this.ecrRepository = ecr.Repository.fromRepositoryName(this, 'ApplicationRepository', environmentConfig.resourceNames.ecrRepositoryName);
 
         // Note: ECR repository is created and managed during the synth step
         // CodeBuild permissions are handled by the pipeline's synthCodeBuildDefaults
@@ -71,8 +68,8 @@ export class EcsStack extends cdk.Stack {
         // Create security group for Application Load Balancer with least privilege access
         this.albSecurityGroup = new ec2.SecurityGroup(this, 'AlbSecurityGroup', {
             vpc: this.vpc,
-            description: `Security group for ${appConfig.applicationDisplayName} Application Load Balancer - least privilege access`,
-            securityGroupName: appConfig.resourceNames.albSecurityGroupName,
+            description: `Security group for ${props.environmentConfig.serviceName} Load Balancer - least privilege access`,
+            securityGroupName: environmentConfig.resourceNames.albSecurityGroupName,
             allowAllOutbound: false, // Explicitly define all egress rules for security
         });
 
@@ -93,16 +90,16 @@ export class EcsStack extends cdk.Stack {
         // Create security group for ECS tasks with strict least privilege access
         this.ecsSecurityGroup = new ec2.SecurityGroup(this, 'EcsSecurityGroup', {
             vpc: this.vpc,
-            description: `Security group for ${appConfig.applicationDisplayName} ECS tasks - least privilege access`,
-            securityGroupName: appConfig.resourceNames.ecsSecurityGroupName,
+            description: `Security group for ${props.environmentConfig.serviceName} ECS tasks - least privilege access`,
+            securityGroupName: environmentConfig.resourceNames.ecsSecurityGroupName,
             allowAllOutbound: false, // Explicitly define all egress rules for security
         });
 
         // Allow inbound traffic from ALB to ECS tasks on configured container port ONLY
         this.ecsSecurityGroup.addIngressRule(
             this.albSecurityGroup,
-            ec2.Port.tcp(appConfig.containerPort),
-            `Allow traffic from ALB to ECS tasks on port ${appConfig.containerPort} only`
+            ec2.Port.tcp(ecsConfig.containerPort),
+            `Allow traffic from ALB to ECS tasks on port ${ecsConfig.containerPort} only`
         );
 
         // Allow outbound HTTPS traffic for ECS tasks to AWS services (ECR, CloudWatch, etc.)
@@ -138,8 +135,8 @@ export class EcsStack extends cdk.Stack {
         // Allow outbound traffic from ALB to ECS tasks on configured container port ONLY
         this.albSecurityGroup.addEgressRule(
             this.ecsSecurityGroup,
-            ec2.Port.tcp(appConfig.containerPort),
-            `Allow traffic from ALB to ECS tasks on port ${appConfig.containerPort} only`
+            ec2.Port.tcp(ecsConfig.containerPort),
+            `Allow traffic from ALB to ECS tasks on port ${ecsConfig.containerPort} only`
         );
 
         // VPC endpoints are now managed by VpcStack
@@ -148,7 +145,7 @@ export class EcsStack extends cdk.Stack {
         this.applicationLoadBalancer = new elbv2.ApplicationLoadBalancer(this, 'ApplicationLoadBalancer', {
             vpc: this.vpc,
             internetFacing: true, // Internet-facing ALB for public access
-            loadBalancerName: appConfig.resourceNames.albName,
+            loadBalancerName: environmentConfig.resourceNames.albName,
             securityGroup: this.albSecurityGroup,
             // Place ALB in public subnets across multiple AZs
             vpcSubnets: {
@@ -161,15 +158,15 @@ export class EcsStack extends cdk.Stack {
         // Create target group for ECS tasks on configured container port
         this.targetGroup = new elbv2.ApplicationTargetGroup(this, 'ApplicationTargetGroup', {
             vpc: this.vpc,
-            port: appConfig.containerPort,
+            port: ecsConfig.containerPort,
             protocol: elbv2.ApplicationProtocol.HTTP,
             targetType: elbv2.TargetType.IP, // Required for Fargate tasks
-            targetGroupName: appConfig.resourceNames.targetGroupName,
+            targetGroupName: environmentConfig.resourceNames.targetGroupName,
             // Health check configuration for target group - aligned with container health check
             healthCheck: {
                 enabled: true,
-                path: appConfig.healthCheckPath, // Health check endpoint path from config
-                port: appConfig.containerPort.toString(),
+                path: ecsConfig.healthCheckPath, // Health check endpoint path from config
+                port: ecsConfig.containerPort.toString(),
                 protocol: elbv2.Protocol.HTTP,
                 healthyHttpCodes: '200', // Consider 200 as healthy
                 interval: cdk.Duration.seconds(30), // Check every 30 seconds
@@ -191,21 +188,21 @@ export class EcsStack extends cdk.Stack {
 
         // Create CloudWatch log groups for ECS tasks with environment-specific retention
         const logGroup = new logs.LogGroup(this, 'ApplicationLogGroup', {
-            logGroupName: appConfig.resourceNames.logGroupName,
+            logGroupName: environmentConfig.resourceNames.logGroupName,
             retention: ecsConfig.logRetention,
             removalPolicy: cdk.RemovalPolicy.DESTROY, // Remove log group when stack is deleted
         });
 
         // Create separate log group for ALB access logs (optional, for future use)
         const albLogGroup = new logs.LogGroup(this, 'ApplicationAlbLogGroup', {
-            logGroupName: `/aws/applicationloadbalancer/${appConfig.applicationName}`,
+            logGroupName: `/aws/applicationloadbalancer/${props.environmentConfig.serviceName}`,
             retention: logs.RetentionDays.ONE_WEEK, // ALB logs can have shorter retention
             removalPolicy: cdk.RemovalPolicy.DESTROY,
         });
 
         // Create log group for ECS service events and deployment logs
         const ecsServiceLogGroup = new logs.LogGroup(this, 'ApplicationServiceLogGroup', {
-            logGroupName: `/aws/ecs/service/${appConfig.applicationName}`,
+            logGroupName: `/aws/ecs/service/${props.environmentConfig.serviceName}`,
             retention: logs.RetentionDays.ONE_MONTH, // Service events kept longer for troubleshooting
             removalPolicy: cdk.RemovalPolicy.DESTROY,
         });
@@ -231,7 +228,7 @@ export class EcsStack extends cdk.Stack {
                                 'ecr:GetDownloadUrlForLayer',
                                 'ecr:BatchGetImage',
                             ],
-                            resources: [`arn:aws:ecr:${this.region}:${this.account}:repository/${appConfig.resourceNames.ecrRepositoryName}`],
+                            resources: [`arn:aws:ecr:${this.region}:${this.account}:repository/${environmentConfig.resourceNames.ecrRepositoryName}`],
                         }),
                         // ECR authorization token (required for all ECR operations)
                         new iam.PolicyStatement({
@@ -287,7 +284,7 @@ export class EcsStack extends cdk.Stack {
                             resources: ['*'], // CloudWatch metrics don't support resource-level permissions
                             conditions: {
                                 'StringEquals': {
-                                    'cloudwatch:namespace': `${appConfig.applicationName}/Metrics`, // Restrict to application-specific namespace
+                                    'cloudwatch:namespace': `${props.environmentConfig.serviceName}/Metrics`, // Restrict to application-specific namespace
                                 },
                             },
                         }),
@@ -298,7 +295,7 @@ export class EcsStack extends cdk.Stack {
 
         // Create Fargate task definition with environment-specific CPU and memory specifications
         this.taskDefinition = new ecs.FargateTaskDefinition(this, 'ApplicationTaskDefinition', {
-            family: appConfig.resourceNames.taskDefinitionFamily,
+            family: environmentConfig.resourceNames.taskDefinitionFamily,
             // CPU units (1024 = 1 vCPU) - environment-specific
             cpu: ecsConfig.cpu,
             // Memory in MB - environment-specific
@@ -311,13 +308,13 @@ export class EcsStack extends cdk.Stack {
         // Add container definition to task definition with environment-specific configuration
         const container = this.taskDefinition.addContainer('application-container', {
             // Container name
-            containerName: `${appConfig.applicationName}-${stage}`,
+            containerName: `${props.environmentConfig.serviceName}-${stage}`,
             // ECR image reference - will be updated by pipeline with specific tags
             image: ecs.ContainerImage.fromEcrRepository(this.ecrRepository, 'latest'),
             // Port mappings - only expose necessary ports
             portMappings: [
                 {
-                    containerPort: appConfig.containerPort,
+                    containerPort: ecsConfig.containerPort,
                     protocol: ecs.Protocol.TCP,
                     name: 'http',
                     appProtocol: ecs.AppProtocol.http, // Specify application protocol for better routing
@@ -326,7 +323,7 @@ export class EcsStack extends cdk.Stack {
             // CloudWatch logging configuration with enhanced security
             logging: ecs.LogDrivers.awsLogs({
                 logGroup: logGroup,
-                streamPrefix: `${appConfig.applicationName}-${stage}`,
+                streamPrefix: `${props.environmentConfig.serviceName}-${stage}`,
             }),
             // Environment variables for Next.js application - environment-specific
             environment: {
@@ -344,7 +341,7 @@ export class EcsStack extends cdk.Stack {
             // healthCheck: {
             //     command: [
             //         'CMD-SHELL',
-            //         `curl -f --connect-timeout 10 --max-time 15 http://localhost:${appConfig.containerPort}${appConfig.healthCheckPath} || exit 1`
+            //         `curl -f --connect-timeout 10 --max-time 15 http://localhost:${appConfig.serviceConfig.containerPort}${appConfig.healthCheckPath} || exit 1`
             //     ],
             //     interval: cdk.Duration.seconds(30),
             //     timeout: cdk.Duration.seconds(20),
@@ -381,7 +378,7 @@ export class EcsStack extends cdk.Stack {
             );
 
             // Step 3: Add Secrets Manager permissions to task execution role
-            this.addSecretsManagerPermissions(this.secret, appConfig.applicationName, stage);
+            this.addSecretsManagerPermissions(this.secret);
 
             // Step 4: Prepare environment variables for conflict checking
             const containerEnvironmentVars = {
@@ -423,13 +420,13 @@ export class EcsStack extends cdk.Stack {
         });
 
         new cdk.CfnOutput(this, 'EcrRepositoryUri', {
-            value: `${this.account}.dkr.ecr.${this.region}.amazonaws.com/${appConfig.resourceNames.ecrRepositoryName}`,
+            value: `${this.account}.dkr.ecr.${this.region}.amazonaws.com/${environmentConfig.resourceNames.ecrRepositoryName}`,
             description: 'ECR Repository URI for container images',
             exportName: `${this.stackName}-EcrRepositoryUri`,
         });
 
         new cdk.CfnOutput(this, 'EcrRepositoryName', {
-            value: appConfig.resourceNames.ecrRepositoryName,
+            value: environmentConfig.resourceNames.ecrRepositoryName,
             description: 'ECR Repository Name',
             exportName: `${this.stackName}-EcrRepositoryName`,
         });
@@ -493,7 +490,7 @@ export class EcsStack extends cdk.Stack {
         this.ecsService = new ecs.FargateService(this, 'ApplicationService', {
             cluster: this.cluster,
             taskDefinition: this.taskDefinition,
-            serviceName: appConfig.resourceNames.serviceName,
+            serviceName: environmentConfig.resourceNames.serviceName,
             // Environment-specific desired count for high availability
             desiredCount: ecsConfig.desiredCount,
             // Configure service to use private subnets for security
@@ -543,7 +540,7 @@ export class EcsStack extends cdk.Stack {
             targetUtilizationPercent: ecsConfig.targetCpuUtilization, // Environment-specific target CPU utilization
             scaleInCooldown: ecsConfig.scaleInCooldown, // Environment-specific cooldown for scale-in
             scaleOutCooldown: ecsConfig.scaleOutCooldown, // Environment-specific cooldown for scale-out
-            policyName: `${appConfig.applicationName}-cpu-scaling-policy-${stage}`,
+            policyName: `${props.environmentConfig.serviceName}-cpu-scaling-policy-${stage}`,
         });
 
         // Add memory-based scaling policy for better resource management
@@ -551,15 +548,15 @@ export class EcsStack extends cdk.Stack {
             targetUtilizationPercent: ecsConfig.targetCpuUtilization + 10, // Slightly higher threshold for memory
             scaleInCooldown: ecsConfig.scaleInCooldown,
             scaleOutCooldown: ecsConfig.scaleOutCooldown,
-            policyName: `${appConfig.applicationName}-memory-scaling-policy-${stage}`,
+            policyName: `${props.environmentConfig.serviceName}-memory-scaling-policy-${stage}`,
         });
 
         // Add CloudWatch alarms for scaling triggers with environment-specific configuration
         if (environmentConfig.monitoring?.enableDetailedMonitoring) {
             // High CPU utilization alarm
             const highCpuAlarm = new cloudwatch.Alarm(this, 'HighCpuAlarm', {
-                alarmName: `${appConfig.applicationName}-high-cpu-${stage}`,
-                alarmDescription: `Alarm when CPU utilization is high for ${appConfig.applicationDisplayName} ${stage} environment`,
+                alarmName: `${props.environmentConfig.serviceName}-high-cpu-${stage}`,
+                alarmDescription: `Alarm when CPU utilization is high for ${props.environmentConfig.serviceName} ${stage} environment`,
                 metric: this.ecsService.metricCpuUtilization({
                     period: cdk.Duration.minutes(5),
                     statistic: cloudwatch.Stats.AVERAGE,
@@ -571,8 +568,8 @@ export class EcsStack extends cdk.Stack {
 
             // High memory utilization alarm
             const highMemoryAlarm = new cloudwatch.Alarm(this, 'HighMemoryAlarm', {
-                alarmName: `${appConfig.applicationName}-high-memory-${stage}`,
-                alarmDescription: `Alarm when memory utilization is high for ${appConfig.applicationDisplayName} ${stage} environment`,
+                alarmName: `${props.environmentConfig.serviceName}-high-memory-${stage}`,
+                alarmDescription: `Alarm when memory utilization is high for ${props.environmentConfig.serviceName} ${stage} environment`,
                 metric: this.ecsService.metricMemoryUtilization({
                     period: cdk.Duration.minutes(5),
                     statistic: cloudwatch.Stats.AVERAGE,
@@ -584,8 +581,8 @@ export class EcsStack extends cdk.Stack {
 
             // Service task count alarm (for availability monitoring)
             const lowTaskCountAlarm = new cloudwatch.Alarm(this, 'LowTaskCountAlarm', {
-                alarmName: `${appConfig.applicationName}-low-task-count-${stage}`,
-                alarmDescription: `Alarm when running task count is below minimum for ${appConfig.applicationDisplayName} ${stage} environment`,
+                alarmName: `${props.environmentConfig.serviceName}-low-task-count-${stage}`,
+                alarmDescription: `Alarm when running task count is below minimum for ${props.environmentConfig.serviceName} ${stage} environment`,
                 metric: new cloudwatch.Metric({
                     namespace: 'AWS/ECS',
                     metricName: 'RunningTaskCount',
@@ -604,8 +601,8 @@ export class EcsStack extends cdk.Stack {
 
             // ALB target health alarm
             const unhealthyTargetsAlarm = new cloudwatch.Alarm(this, 'UnhealthyTargetsAlarm', {
-                alarmName: `${appConfig.applicationName}-unhealthy-targets-${stage}`,
-                alarmDescription: `Alarm when ALB has unhealthy targets for ${appConfig.applicationDisplayName} ${stage} environment`,
+                alarmName: `${props.environmentConfig.serviceName}-unhealthy-targets-${stage}`,
+                alarmDescription: `Alarm when ALB has unhealthy targets for ${props.environmentConfig.serviceName} ${stage} environment`,
                 metric: this.targetGroup.metrics.unhealthyHostCount({
                     period: cdk.Duration.minutes(1),
                     statistic: cloudwatch.Stats.AVERAGE,
@@ -632,7 +629,7 @@ export class EcsStack extends cdk.Stack {
 
         // Create CloudWatch Dashboard for service health monitoring
         const dashboard = new cloudwatch.Dashboard(this, 'ApplicationDashboard', {
-            dashboardName: `${appConfig.applicationName}-service-health`,
+            dashboardName: `${props.environmentConfig.serviceName}-service-health`,
             defaultInterval: cdk.Duration.hours(1), // Default time range: 1 hour
         });
 
@@ -903,13 +900,9 @@ fields @timestamp, @message
      * Implements least-privilege access by granting permissions only to environment-specific secrets.
      * 
      * @param secret - The Secrets Manager secret to grant access to
-     * @param applicationName - The application name for resource scoping
-     * @param stage - The deployment stage for resource scoping
      */
     private addSecretsManagerPermissions(
         secret: secretsmanager.ISecret,
-        applicationName: string,
-        stage: string
     ): void {
         // Add Secrets Manager permissions to task execution role with least privilege
         this.taskExecutionRole.addToPolicy(
@@ -922,14 +915,7 @@ fields @timestamp, @message
                     secret.secretArn,
                     // Include versioned secret ARN pattern for secret rotation support
                     `${secret.secretArn}:*`,
-                ],
-                conditions: {
-                    // Additional security condition to ensure access is limited to this application/stage
-                    StringEquals: {
-                        'secretsmanager:ResourceTag/Application': applicationName,
-                        'secretsmanager:ResourceTag/Stage': stage,
-                    },
-                },
+                ]
             })
         );
 

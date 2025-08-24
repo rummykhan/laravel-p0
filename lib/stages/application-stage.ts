@@ -37,7 +37,7 @@ export class ApplicationStage extends cdk.Stage {
     // Create VPC Stack for network infrastructure
     this.vpcStack = new VpcStack(this, `VpcStack`, {
       ...props,
-      description: `VPC infrastructure for ${applicationConfig.applicationDisplayName}`,
+      description: `VPC infrastructure for ${applicationConfig.applicationName}`,
       stage: stage, // Use base stage for configuration
       applicationConfig: applicationConfig,
     });
@@ -45,11 +45,10 @@ export class ApplicationStage extends cdk.Stage {
     // Create EcsStack for containerized application deployment with resolved configuration
     this.ecsStack = new EcsStack(this, `EcsStack`, {
       ...props,
-      description: `ECS Fargate stack for ${applicationConfig.applicationDisplayName} with ALB`,
+      description: `ECS Fargate stack for Service`,
       stage: stage, // Use base stage for configuration
-      environmentConfig: environmentConfig, // Pass full environment configuration to ECS stack
-      applicationConfig: applicationConfig, // Pass resolved configuration to ECS stack
       vpc: this.vpcStack.vpc, // Pass VPC from VPC stack
+      environmentConfig: environmentConfig.serviceConfig, // Pass full environment configuration to ECS stack
     });
 
     // Add stage-specific tags to all resources in this stage

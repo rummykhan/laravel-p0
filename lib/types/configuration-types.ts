@@ -18,10 +18,12 @@ import { EcsEnvironmentConfig } from "../../config/types";
  */
 export interface ApplicationConfig {
   // Application identification
+
   /** Unique identifier for the application (used in resource naming) */
   applicationName: string;
-  /** Human-readable display name for the application */
-  applicationDisplayName: string;
+
+  /** Description for the application */
+  applicationDescription: string;
 
   // Pipeline configuration
   /** GitHub token secret name for repository access */
@@ -30,30 +32,34 @@ export interface ApplicationConfig {
   accounts: AccountsByStage;
   /** Repository configuration for infrastructure and service code */
   repositories: {
-    infraRepository: Repository;
-    serviceRepository: Repository;
+    infra: Repository;
+    service: Repository;
   };
 
-  // Application settings (may be overridden per environment)
+  serviceBuildConfig: BuildConfig;
+}
+
+/**
+ * Service config, we can use the same service config for multiple services.
+ */
+export interface BuildConfig {
+  repositoryName: string;
+
   /** Source directory containing the application code */
   sourceDirectory: string;
+
   /** ECR repository name for storing Docker images */
   ecrRepositoryName: string;
+
   /** Path to the Dockerfile relative to source directory */
   dockerfilePath: string;
-  /** Port the container exposes for the application */
-  containerPort: number;
-  /** Health check endpoint path */
-  healthCheckPath: string;
 
   // Build configuration (may be overridden per environment)
   /** Commands to run during the build process */
   buildCommands: string[];
+
   /** Docker build arguments passed during image build */
   dockerBuildArgs: { [key: string]: string };
-
-  /** Generated resource names for this configuration */
-  resourceNames: ResourceNames;
 }
 
 /**
@@ -82,6 +88,12 @@ export interface EnvironmentConfig {
   /** Application configuration overrides for this environment */
   applicationOverrides?: Partial<Omit<ApplicationConfig, 'resolvedStage' | 'resourceNames'>>;
 
+  serviceConfig: EnvironmentServiceConfig;
+}
+
+export interface EnvironmentServiceConfig {
+  serviceName: string;
+
   /** Build configuration overrides for this environment */
   buildOverrides?: {
     /** Docker build arguments specific to this environment */
@@ -105,6 +117,8 @@ export interface EnvironmentConfig {
 
   /** Secrets Manager configuration for this environment */
   secretsConfig?: SecretsConfig;
+
+  resourceNames: ResourceNames;
 }
 
 /**

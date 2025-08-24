@@ -23,57 +23,38 @@ const APP_NAME = SERVICE_REPO_NAME;
  */
 const APPLICATION_CONFIG: ApplicationConfig = {
   // Application identification
-  applicationName: APP_NAME,
-  applicationDisplayName: 'META CAPI Application',
+  applicationName: `MetaCAPIInfrastructure`,
+  applicationDescription: 'Application for META CAPI Service & API',
 
   githubTokenSecretName: `github/pipeline`,
 
   accounts: ACCOUNTS_BY_STAGE,
+  
   repositories: {
-    infraRepository: CDK_APP_REPOSITORY,
-    serviceRepository: USERS_WEB_APP_REPOSITORY
+    infra: CDK_APP_REPOSITORY,
+    service: USERS_WEB_APP_REPOSITORY
   },
 
-  // Repository and build configuration
-  sourceDirectory: APP_NAME,
-  ecrRepositoryName: APP_NAME,
-  dockerfilePath: 'Dockerfile',
-
-  // Container configuration
-  containerPort: 3000,
-  healthCheckPath: '/api/health',
-
-  // Build configuration
-  buildCommands: [
-    'npm ci',
-    'NODE_ENV=production npm run build'
-  ],
-
-  dockerBuildArgs: {
-    NODE_ENV: 'production',
-    NEXT_TELEMETRY_DISABLED: '1'
-  },
-
-  resourceNames: {
-    // ECR resources
+  serviceBuildConfig: {
+    repositoryName: APP_NAME,
+    
+    sourceDirectory: APP_NAME,
+    
     ecrRepositoryName: APP_NAME,
+    
+    dockerfilePath: 'Dockerfile',
 
-    // ECS resources
-    clusterName: `${APP_NAME}-cluster`,
-    serviceName: `${APP_NAME}-service`,
-    taskDefinitionFamily: `${APP_NAME}-task-definition-family`,
+    buildCommands: [
+      'npm ci',
+      'NODE_ENV=production npm run build'
+    ],
 
-    // Load balancer resources
-    albName: `${APP_NAME}-alb`,
-    targetGroupName: `${APP_NAME}-tg`,
+    dockerBuildArgs: {
+      NODE_ENV: 'production',
+      NEXT_TELEMETRY_DISABLED: '1'
+    }
 
-    // CloudWatch resources
-    logGroupName: `/aws/ecs/${APP_NAME.toLowerCase()}`,
-
-    // Security group names
-    albSecurityGroupName:`${APP_NAME}-alb-sg`,
-    ecsSecurityGroupName: `${APP_NAME}-ecs-sg`
-  }
+  },
 };
 
 /**
