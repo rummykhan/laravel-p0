@@ -331,11 +331,12 @@ export class EcsStack extends cdk.Stack {
             environment: {
                 ...ecsConfig.environmentVariables,
                 // Add stage-specific environment variable
-                DEPLOYMENT_STAGE: stage.toUpperCase(),
+                DEPLOYMENT_STAGE: stage.toLowerCase(),
+
                 // Add timestamp for deployment tracking
                 DEPLOYMENT_TIMESTAMP: new Date().toISOString(),
 
-                DEPLOYMENT_REGION: props.env?.region as string
+                DEPLOYMENT_REGION: (props.env?.region as string).toLowerCase(),
             },
             // Container health check disabled - relying on ALB target group health checks only
             // ALB health checks are sufficient for most use cases and avoid container startup issues
