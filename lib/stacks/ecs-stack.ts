@@ -7,7 +7,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
-import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
+
 import { validateEnvironmentConfig } from '../../config/deployment-config';
 import { ApplicationConfig, EnvironmentConfig } from '../types/configuration-types';
 import { Stage } from '../../config/types';
@@ -34,7 +34,7 @@ export class EcsStack extends cdk.Stack {
     public readonly taskRole: iam.Role;
     public readonly ecsService: ecs.FargateService;
     public readonly scalableTarget: ecs.ScalableTaskCount;
-    public readonly serviceDiscoveryNamespace: servicediscovery.PrivateDnsNamespace;
+
 
     constructor(scope: Construct, id: string, props: EcsStackProps) {
         super(scope, id, props);
@@ -445,13 +445,7 @@ export class EcsStack extends cdk.Stack {
 
         // VPC endpoint outputs are now managed by VpcStack
 
-        // Create service discovery namespace for internal service communication
-        // This enables services to discover each other using DNS names within the VPC
-        this.serviceDiscoveryNamespace = new servicediscovery.PrivateDnsNamespace(this, 'ServiceDiscoveryNamespace', {
-            name: `${appConfig.applicationName}.local`,
-            vpc: this.vpc,
-            description: `Private DNS namespace for ${appConfig.applicationDisplayName} service discovery`,
-        });
+
 
         // Create ECS service with environment-specific deployment configuration
         this.ecsService = new ecs.FargateService(this, 'ApplicationService', {
@@ -480,13 +474,7 @@ export class EcsStack extends cdk.Stack {
             healthCheckGracePeriod: ecsConfig.healthCheckGracePeriod,
             // Use latest Fargate platform version for security patches
             platformVersion: ecs.FargatePlatformVersion.LATEST,
-            // Enable service discovery for internal service communication
-            cloudMapOptions: {
-                cloudMapNamespace: this.serviceDiscoveryNamespace,
-                name: appConfig.applicationName,
-                dnsRecordType: servicediscovery.DnsRecordType.A,
-                dnsTtl: cdk.Duration.seconds(60),
-            },
+
             // Enable execute command for secure debugging - environment-specific
             enableExecuteCommand: ecsConfig.enableExecuteCommand,
 
@@ -841,27 +829,7 @@ fields @timestamp, @message
             exportName: `${this.stackName}-EcsServiceName`,
         });
 
-        // Service Discovery outputs for internal service communication
-        new cdk.CfnOutput(this, 'ServiceDiscoveryNamespaceId', {
-            value: this.serviceDiscoveryNamespace.namespaceId,
-            description: 'Service Discovery Namespace ID for internal communication',
-            exportName: `${this.stackName}-ServiceDiscoveryNamespaceId`,
-        });
 
-        new cdk.CfnOutput(this, 'ServiceDiscoveryNamespaceName', {
-            value: this.serviceDiscoveryNamespace.namespaceName,
-            description: 'Service Discovery Namespace Name for DNS resolution',
-            exportName: `${this.stackName}-ServiceDiscoveryNamespaceName`,
-        });
-
-        // Note: Service Discovery Service is automatically created by ECS cloudMapOptions
-        // The service ARN and ID are managed internally by the ECS service
-
-        new cdk.CfnOutput(this, 'InternalServiceDnsName', {
-            value: `${appConfig.applicationName}.${this.serviceDiscoveryNamespace.namespaceName}`,
-            description: 'Internal DNS name for service discovery (for other services to connect)',
-            exportName: `${this.stackName}-InternalServiceDnsName`,
-        });
 
         // Auto-scaling outputs
         new cdk.CfnOutput(this, 'ScalableTargetResourceId', {
