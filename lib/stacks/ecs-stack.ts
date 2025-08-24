@@ -10,6 +10,7 @@ import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import { validateEnvironmentConfig } from '../../config/deployment-config';
 import { ApplicationConfig, EnvironmentConfig } from '../types/configuration-types';
+import { Stage } from '../../config/types';
 
 export interface EcsStackProps extends cdk.StackProps {
     environmentConfig: EnvironmentConfig;
@@ -333,6 +334,8 @@ export class EcsStack extends cdk.Stack {
                 DEPLOYMENT_STAGE: stage.toUpperCase(),
                 // Add timestamp for deployment tracking
                 DEPLOYMENT_TIMESTAMP: new Date().toISOString(),
+
+                DEPLOYMENT_REGION: props.env?.region as string
             },
             // Container health check disabled - relying on ALB target group health checks only
             // ALB health checks are sufficient for most use cases and avoid container startup issues

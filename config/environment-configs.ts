@@ -89,6 +89,8 @@ export const ENVIRONMENT_CONFIGS: Record<string, EnvironmentConfig> = {
         ENABLE_PERFORMANCE_MONITORING: 'false',
         // Add beta-specific identifier
         DEPLOYMENT_ENV: 'beta',
+
+        DEBUG_TOKEN: `MetaCAPIDebugInfoToken-1234567890`
       },
 
       // Logging configuration
