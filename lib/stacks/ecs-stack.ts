@@ -9,17 +9,15 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import { validateEnvironmentConfig } from '../../config/deployment-config';
-import { ApplicationConfig } from '../types/configuration-types';
-import { EcsEnvironmentConfig } from '../../config/types';
-import { getEnvironmentConfig } from '../../config/environment-configs';
+import { ApplicationConfig, EnvironmentConfig } from '../types/configuration-types';
 
 export interface EcsStackProps extends cdk.StackProps {
-    environmentConfig?: EcsEnvironmentConfig;
-    stage?: string;
+    environmentConfig: EnvironmentConfig;
+    stage: string;
     /** Resolved application configuration with resource names */
-    applicationConfig?: ApplicationConfig;
+    applicationConfig: ApplicationConfig;
     /** VPC to use for ECS resources */
-    vpc?: ec2.IVpc;
+    vpc: ec2.IVpc;
 }
 
 export class EcsStack extends cdk.Stack {
@@ -37,32 +35,19 @@ export class EcsStack extends cdk.Stack {
     public readonly scalableTarget: ecs.ScalableTaskCount;
     public readonly serviceDiscoveryNamespace: servicediscovery.PrivateDnsNamespace;
 
-    constructor(scope: Construct, id: string, props?: EcsStackProps) {
+    constructor(scope: Construct, id: string, props: EcsStackProps) {
         super(scope, id, props);
 
-        // Get environment configuration
-        const stage = props?.stage || 'beta';
-        const environmentConfig = getEnvironmentConfig(stage);
-        
-        if (!environmentConfig) {
-            throw new Error(`No environment configuration found for stage: ${stage}`);
-        }
-        
-        const envConfig = props?.environmentConfig || environmentConfig.ecsConfig;
-
-        // Get application configuration - use provided config or fall back to defaults
-        const appConfig = props?.applicationConfig;
-        if (!appConfig) {
-            throw new Error('Application configuration is required. Please provide a resolved application configuration.');
-        }
+        // Get required parameters from props
+        const stage = props.stage;
+        const environmentConfig = props.environmentConfig;
+        const ecsConfig = environmentConfig.ecsConfig;
+        const appConfig = props.applicationConfig;
 
         // Validate the environment configuration
         validateEnvironmentConfig(stage);
 
-        // Use provided VPC or throw error if not provided
-        if (!props?.vpc) {
-            throw new Error('VPC is required. Please provide a VPC instance from VpcStack.');
-        }
+        // Use provided VPC
         this.vpc = props.vpc;
 
         // Create ECS Cluster with environment-specific configuration
@@ -70,7 +55,7 @@ export class EcsStack extends cdk.Stack {
             vpc: this.vpc,
             clusterName: appConfig.resourceNames.clusterName,
             // Enable CloudWatch Container Insights based on environment configuration
-            containerInsightsV2: environmentConfig.monitoring.enableContainerInsights ?
+            containerInsightsV2: environmentConfig.monitoring?.enableContainerInsights ?
                 ecs.ContainerInsights.ENABLED :
                 ecs.ContainerInsights.DISABLED,
         });
@@ -205,7 +190,7 @@ export class EcsStack extends cdk.Stack {
         // Create CloudWatch log groups for ECS tasks with environment-specific retention
         const logGroup = new logs.LogGroup(this, 'ApplicationLogGroup', {
             logGroupName: appConfig.resourceNames.logGroupName,
-            retention: envConfig.logRetention,
+            retention: ecsConfig.logRetention,
             removalPolicy: cdk.RemovalPolicy.DESTROY, // Remove log group when stack is deleted
         });
 
@@ -313,9 +298,9 @@ export class EcsStack extends cdk.Stack {
         this.taskDefinition = new ecs.FargateTaskDefinition(this, 'ApplicationTaskDefinition', {
             family: appConfig.resourceNames.taskDefinitionFamily,
             // CPU units (1024 = 1 vCPU) - environment-specific
-            cpu: envConfig.cpu,
+            cpu: ecsConfig.cpu,
             // Memory in MB - environment-specific
-            memoryLimitMiB: envConfig.memoryLimitMiB,
+            memoryLimitMiB: ecsConfig.memoryLimitMiB,
             // IAM roles
             executionRole: this.taskExecutionRole,
             taskRole: this.taskRole,
@@ -343,7 +328,7 @@ export class EcsStack extends cdk.Stack {
             }),
             // Environment variables for Next.js application - environment-specific
             environment: {
-                ...envConfig.environmentVariables,
+                ...ecsConfig.environmentVariables,
                 // Add stage-specific environment variable
                 DEPLOYMENT_STAGE: stage.toUpperCase(),
                 // Add timestamp for deployment tracking
@@ -368,8 +353,8 @@ export class EcsStack extends cdk.Stack {
             // Run container as non-root user for security (requires Dockerfile configuration)
             user: '1001', // Non-root user ID (must match Dockerfile USER directive)
             // Memory and CPU limits for security - environment-specific
-            memoryLimitMiB: envConfig.memoryLimitMiB, // Hard limit to prevent memory exhaustion
-            memoryReservationMiB: envConfig.memoryReservationMiB, // Soft limit for better resource allocation
+            memoryLimitMiB: ecsConfig.memoryLimitMiB, // Hard limit to prevent memory exhaustion
+            memoryReservationMiB: ecsConfig.memoryReservationMiB, // Soft limit for better resource allocation
             // Disable privileged mode for security
             privileged: false,
             // Linux parameters for enhanced security
@@ -470,7 +455,7 @@ export class EcsStack extends cdk.Stack {
             taskDefinition: this.taskDefinition,
             serviceName: appConfig.resourceNames.serviceName,
             // Environment-specific desired count for high availability
-            desiredCount: envConfig.desiredCount,
+            desiredCount: ecsConfig.desiredCount,
             // Configure service to use private subnets for security
             vpcSubnets: {
                 subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
@@ -480,15 +465,15 @@ export class EcsStack extends cdk.Stack {
             // Assign public IP is disabled for security (tasks in private subnets)
             assignPublicIp: false,
             // Configure deployment settings for zero-downtime updates - environment-specific
-            maxHealthyPercent: envConfig.maxHealthyPercent,
-            minHealthyPercent: envConfig.minHealthyPercent,
+            maxHealthyPercent: ecsConfig.maxHealthyPercent,
+            minHealthyPercent: ecsConfig.minHealthyPercent,
             // Enable deployment circuit breaker for automatic rollback on failure - environment-specific
             circuitBreaker: {
-                enable: envConfig.circuitBreakerEnabled,
-                rollback: envConfig.circuitBreakerRollback,
+                enable: ecsConfig.circuitBreakerEnabled,
+                rollback: ecsConfig.circuitBreakerRollback,
             },
             // Health check grace period - environment-specific
-            healthCheckGracePeriod: envConfig.healthCheckGracePeriod,
+            healthCheckGracePeriod: ecsConfig.healthCheckGracePeriod,
             // Use latest Fargate platform version for security patches
             platformVersion: ecs.FargatePlatformVersion.LATEST,
             // Enable service discovery for internal service communication
@@ -499,7 +484,7 @@ export class EcsStack extends cdk.Stack {
                 dnsTtl: cdk.Duration.seconds(60),
             },
             // Enable execute command for secure debugging - environment-specific
-            enableExecuteCommand: envConfig.enableExecuteCommand,
+            enableExecuteCommand: ecsConfig.enableExecuteCommand,
 
             // Additional deployment settings for zero-downtime updates
             propagateTags: ecs.PropagatedTagSource.SERVICE, // Propagate tags to tasks
@@ -515,28 +500,28 @@ export class EcsStack extends cdk.Stack {
         // Add environment-specific auto-scaling configuration
         // Create Application Auto Scaling target for ECS service with environment-specific capacity
         this.scalableTarget = this.ecsService.autoScaleTaskCount({
-            minCapacity: envConfig.minCapacity, // Environment-specific minimum number of tasks
-            maxCapacity: envConfig.maxCapacity, // Environment-specific maximum number of tasks
+            minCapacity: ecsConfig.minCapacity, // Environment-specific minimum number of tasks
+            maxCapacity: ecsConfig.maxCapacity, // Environment-specific maximum number of tasks
         });
 
         // Configure CPU-based scaling policy with environment-specific settings
         this.scalableTarget.scaleOnCpuUtilization('CpuScalingPolicy', {
-            targetUtilizationPercent: envConfig.targetCpuUtilization, // Environment-specific target CPU utilization
-            scaleInCooldown: envConfig.scaleInCooldown, // Environment-specific cooldown for scale-in
-            scaleOutCooldown: envConfig.scaleOutCooldown, // Environment-specific cooldown for scale-out
+            targetUtilizationPercent: ecsConfig.targetCpuUtilization, // Environment-specific target CPU utilization
+            scaleInCooldown: ecsConfig.scaleInCooldown, // Environment-specific cooldown for scale-in
+            scaleOutCooldown: ecsConfig.scaleOutCooldown, // Environment-specific cooldown for scale-out
             policyName: `${appConfig.applicationName}-cpu-scaling-policy-${stage}`,
         });
 
         // Add memory-based scaling policy for better resource management
         this.scalableTarget.scaleOnMemoryUtilization('MemoryScalingPolicy', {
-            targetUtilizationPercent: envConfig.targetCpuUtilization + 10, // Slightly higher threshold for memory
-            scaleInCooldown: envConfig.scaleInCooldown,
-            scaleOutCooldown: envConfig.scaleOutCooldown,
+            targetUtilizationPercent: ecsConfig.targetCpuUtilization + 10, // Slightly higher threshold for memory
+            scaleInCooldown: ecsConfig.scaleInCooldown,
+            scaleOutCooldown: ecsConfig.scaleOutCooldown,
             policyName: `${appConfig.applicationName}-memory-scaling-policy-${stage}`,
         });
 
         // Add CloudWatch alarms for scaling triggers with environment-specific configuration
-        if (environmentConfig.monitoring.enableDetailedMonitoring) {
+        if (environmentConfig.monitoring?.enableDetailedMonitoring) {
             // High CPU utilization alarm
             const highCpuAlarm = new cloudwatch.Alarm(this, 'HighCpuAlarm', {
                 alarmName: `${appConfig.applicationName}-high-cpu-${stage}`,
@@ -545,7 +530,7 @@ export class EcsStack extends cdk.Stack {
                     period: cdk.Duration.minutes(5),
                     statistic: cloudwatch.Stats.AVERAGE,
                 }),
-                threshold: envConfig.targetCpuUtilization + 20, // Trigger 20% above target
+                threshold: ecsConfig.targetCpuUtilization + 20, // Trigger 20% above target
                 evaluationPeriods: 2,
                 treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
             });
@@ -577,7 +562,7 @@ export class EcsStack extends cdk.Stack {
                     period: cdk.Duration.minutes(1),
                     statistic: cloudwatch.Stats.AVERAGE,
                 }),
-                threshold: envConfig.minCapacity,
+                threshold: ecsConfig.minCapacity,
                 comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
                 evaluationPeriods: 2,
                 treatMissingData: cloudwatch.TreatMissingData.BREACHING,
@@ -754,10 +739,10 @@ export class EcsStack extends cdk.Stack {
 **X-Ray Tracing:** ${environmentConfig.monitoring.enableXRayTracing ? 'Enabled' : 'Disabled'}
 
 **Resource Configuration:**
-- CPU: ${envConfig.cpu} units
-- Memory: ${envConfig.memoryLimitMiB} MB
-- Desired Tasks: ${envConfig.desiredCount}
-- Min/Max Capacity: ${envConfig.minCapacity}/${envConfig.maxCapacity}
+- CPU: ${ecsConfig.cpu} units
+- Memory: ${ecsConfig.memoryLimitMiB} MB
+- Desired Tasks: ${ecsConfig.desiredCount}
+- Min/Max Capacity: ${ecsConfig.minCapacity}/${ecsConfig.maxCapacity}
 `,
                 width: 12,
                 height: 4,
@@ -835,12 +820,12 @@ fields @timestamp, @message
 
         new cdk.CfnOutput(this, 'EnvironmentConfig', {
             value: JSON.stringify({
-                cpu: envConfig.cpu,
-                memory: envConfig.memoryLimitMiB,
-                desiredCount: envConfig.desiredCount,
-                minCapacity: envConfig.minCapacity,
-                maxCapacity: envConfig.maxCapacity,
-                circuitBreakerEnabled: envConfig.circuitBreakerEnabled,
+                cpu: ecsConfig.cpu,
+                memory: ecsConfig.memoryLimitMiB,
+                desiredCount: ecsConfig.desiredCount,
+                minCapacity: ecsConfig.minCapacity,
+                maxCapacity: ecsConfig.maxCapacity,
+                circuitBreakerEnabled: ecsConfig.circuitBreakerEnabled,
             }),
             description: 'Environment-specific configuration summary',
             exportName: `${this.stackName}-EnvironmentConfig-${stage}`,

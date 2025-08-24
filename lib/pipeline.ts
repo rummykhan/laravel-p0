@@ -9,7 +9,7 @@ export interface PipelineProps extends cdk.StackProps {
   applicationConfig: ApplicationConfig;
 }
 
-export default class PipelineStack extends cdk.Stack {
+export default class Pipeline extends cdk.Stack {
   constructor(scope: Construct, id: string, props: PipelineProps) {
     super(scope, id, props);
 
@@ -168,7 +168,7 @@ export default class PipelineStack extends cdk.Stack {
     
     deploymentStages.forEach((deploymentStage) => {
       // Add the stage to the pipeline
-      pipeline.addStage(new ApplicationStage(this, `application-stage-${deploymentStage.stage.toLowerCase()}-${this.getRegionKey(deploymentStage.region)}`, {
+      pipeline.addStage(new ApplicationStage(this, `stage-${deploymentStage.stage}-${this.getRegionKey(deploymentStage.region)}`, {
         env: {
           account: deploymentStage.accountId,
           region: deploymentStage.region

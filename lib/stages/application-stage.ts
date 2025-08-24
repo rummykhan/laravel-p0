@@ -6,6 +6,7 @@ import { VpcStack } from "../stacks/vpc-stack";
 import { resolveConfiguration } from "../utils/simple-config-resolver";
 import { ApplicationConfig } from "../types/configuration-types";
 import { Stage } from '../../config/types';
+import { getEnvironmentConfig } from '../../config/environment-configs';
 
 export class ApplicationStage extends cdk.Stage {
   public readonly devStack: DevStack;
@@ -24,14 +25,20 @@ export class ApplicationStage extends cdk.Stage {
     // Resolve configuration for the deployment stage
     this.resolvedConfiguration = resolveConfiguration(stage);
 
+    // Get environment configuration for the stage
+    const environmentConfig = getEnvironmentConfig(stage);
+    if (!environmentConfig) {
+      throw new Error(`No environment configuration found for stage: ${stage}`);
+    }
+
     // Create DevStack first (existing infrastructure)
-    this.devStack = new DevStack(this, 'DevStack', {
+    this.devStack = new DevStack(this, `DevStack`, {
       ...props,
       description: 'Development stack with existing resources',
     });
 
     // Create VPC Stack for network infrastructure
-    this.vpcStack = new VpcStack(this, 'VpcStack', {
+    this.vpcStack = new VpcStack(this, `VpcStack`, {
       ...props,
       description: `VPC infrastructure for ${this.resolvedConfiguration.applicationDisplayName}`,
       stage: stage, // Use base stage for configuration
@@ -39,10 +46,11 @@ export class ApplicationStage extends cdk.Stage {
     });
 
     // Create EcsStack for containerized application deployment with resolved configuration
-    this.ecsStack = new EcsStack(this, 'EcsStack', {
+    this.ecsStack = new EcsStack(this, `EcsStack`, {
       ...props,
       description: `ECS Fargate stack for ${this.resolvedConfiguration.applicationDisplayName} with ALB`,
       stage: stage, // Use base stage for configuration
+      environmentConfig: environmentConfig, // Pass full environment configuration to ECS stack
       applicationConfig: this.resolvedConfiguration, // Pass resolved configuration to ECS stack
       vpc: this.vpcStack.vpc, // Pass VPC from VPC stack
     });

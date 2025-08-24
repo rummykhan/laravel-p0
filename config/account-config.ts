@@ -6,16 +6,12 @@ export const BetaAccount: AWSAccount = {
   isProd: false,
 };
 
-export const PipelineAccount: AWSAccount = {
-  account: '713505378742',  // Same as beta for now, could be different
-  region: AwsRegion.IAD,
-  isProd: false,
-};
+export const PipelineAccount: AWSAccount = BetaAccount;
 
 // New nested accounts structure organized by stage and region
 export const ACCOUNTS_BY_STAGE: AccountsByStage = {
   beta: {
-    na: '713505378742', // Currently only NA region for beta
+    na: BetaAccount.account, // Currently only NA region for beta
     // eu: 'account-id-for-eu-beta',  // Can be added when needed
     // fe: 'account-id-for-fe-beta',  // Can be added when needed
   },
