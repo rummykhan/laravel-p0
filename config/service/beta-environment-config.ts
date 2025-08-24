@@ -59,9 +59,7 @@ export default {
             // Performance monitoring disabled for development
             ENABLE_PERFORMANCE_MONITORING: 'false',
             // Add beta-specific identifier
-            DEPLOYMENT_ENV: 'beta',
-
-            DEBUG_TOKEN: `MetaCAPIDebugInfoToken-1234567890`
+            DEPLOYMENT_ENV: 'beta'
         },
 
         // Logging configuration
@@ -84,7 +82,10 @@ export default {
     /** Secrets Manager configuration for prod environment */
     secretsConfig: {
         environmentKeys: [
-            `TEST_KEY`
+            `TEST_KEY`,
+            `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`,
+            `CLERK_SECRET_KEY`,
+            `DEBUG_TOKEN`
         ],
         secretName: 'application/beta/secrets',
         secretArn: `arn:aws:secretsmanager:us-east-1:713505378742:secret:application/beta/secrets-LzUdwZ`
