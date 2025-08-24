@@ -12,7 +12,7 @@ This project uses a layered configuration system that flows from the entry point
 bin/app.ts
     ↓ (imports applicationConfig)
 config/application-config.ts
-    ↓ (uses accounts, repositories, resource names)
+    ↓ (uses accounts, repositories)
 lib/pipeline.ts
     ↓ (creates stages for each environment)
 lib/stages/application-stage.ts
@@ -30,10 +30,10 @@ lib/stacks/ecs-stack.ts
 - Instantiates the main Pipeline stack
 
 #### 2. **Application Configuration** (`config/application-config.ts`)
-- Defines base application settings (name, display name, ports, health checks)
-- Configures repository information and build commands
-- Sets Docker build arguments and ECR repository names
-- Generates standardized resource names for all AWS resources
+- Defines base application settings (name, description)
+- Configures repository information for infrastructure and service code
+- Sets up service build configuration including Docker build arguments and build commands
+- Configures GitHub token secret name for pipeline access
 - Uses accounts from `config/account-config.ts` and repositories from `config/packages.ts`
 
 #### 3. **Account Configuration** (`config/account-config.ts`)
@@ -46,6 +46,8 @@ lib/stacks/ecs-stack.ts
 - Configures ECS resource sizing (CPU, memory, scaling parameters)
 - Sets environment variables, logging retention, and monitoring settings
 - Defines deployment strategies and health check configurations
+- Contains environment-specific resource names for all AWS resources
+- Supports build configuration overrides per environment
 
 #### 5. **Pipeline Processing** (`lib/pipeline.ts`)
 - Processes the application configuration
@@ -67,7 +69,7 @@ lib/stacks/ecs-stack.ts
 
 1. **Base Configuration**: Application-wide defaults are defined in `application-config.ts`
 2. **Environment Resolution**: Stage-specific overrides are applied from `environment-configs.ts`
-3. **Resource Naming**: Standardized resource names are generated using the application name and stage
+3. **Resource Naming**: Environment-specific resource names are defined in each environment configuration
 4. **Validation**: Configuration is validated at multiple points to ensure consistency
 5. **Deployment**: Resolved configuration is used to create AWS resources
 
@@ -113,14 +115,17 @@ export const ACCOUNTS_BY_STAGE: AccountsByStage = {
 ```
 
 #### Application Configuration (`config/application-config.ts`)
-- **Application Identity**: Set `applicationName` and `applicationDisplayName`
-- **Container Settings**: Configure `containerPort` and `healthCheckPath`
-- **Build Configuration**: Customize `buildCommands` and `dockerBuildArgs`
-- **Resource Naming**: Resource names are auto-generated based on the application name
+- **Application Identity**: Set `applicationName` and `applicationDescription`
+- **Repository Configuration**: Configure infrastructure and service repositories
+- **Service Build Configuration**: Set up `serviceBuildConfig` with build commands, Docker arguments, and ECR settings
+- **GitHub Integration**: Configure `githubTokenSecretName` for pipeline access
 
 #### Environment Configuration (`config/environment-configs.ts`)
 - **Resource Sizing**: Configure CPU, memory, and scaling parameters per environment
 - **Environment Variables**: Set stage-specific environment variables
+- **Secrets Management**: Configure AWS Secrets Manager integration for secure environment variables
+- **Build Overrides**: Override build commands and Docker arguments per environment
+- **Resource Names**: Define environment-specific AWS resource names (ECS, ALB, CloudWatch, etc.)
 - **Monitoring**: Configure logging retention and monitoring settings
 - **Security**: Set security policies and access controls per environment
 
@@ -141,7 +146,40 @@ AWS CDK needs a GitHub token to create webhooks for the repositories.
    - Store the GitHub token as plaintext
    - Update the secret name in `config/application-config.ts` → `githubTokenSecretName`
 
-### 4. Deploy the Application
+### 4. Application Secrets Setup
+
+The application supports loading environment-specific secrets from AWS Secrets Manager during deployment.
+
+1. **Create Application Secret in AWS Secrets Manager:**
+   - Navigate to AWS Secrets Manager in your target account
+   - Create a new secret (choose "Other type of secret")
+   - Add key-value pairs for your application secrets
+   - Note the secret ARN after creation
+
+2. **Configure Secret in Environment Config:**
+   - Update the environment-specific config file (e.g., `config/service/beta-environment-config.ts`)
+   - Set the `secretArn` to the ARN of your created secret
+   - Add the required environment variable keys to the `environmentKeys` array
+
+   ```typescript
+   secretsConfig: {
+       environmentKeys: [
+           'API_KEY',
+           'DATABASE_PASSWORD',
+           'JWT_SECRET'
+           // Add your required secret keys here
+       ],
+       secretName: 'application/beta/secrets',
+       secretArn: 'arn:aws:secretsmanager:region:account:secret:application/beta/secrets-XXXXXX'
+   }
+   ```
+
+3. **Secret Key Management:**
+   - The keys listed in `environmentKeys` will be automatically loaded as environment variables
+   - Ensure all keys exist in your AWS Secrets Manager secret
+   - Keys are case-sensitive and must match exactly
+
+### 5. Deploy the Application
 
 1. **Install dependencies and build:**
    ```bash
@@ -155,7 +193,7 @@ AWS CDK needs a GitHub token to create webhooks for the repositories.
    ```
 
 3. **Bootstrap the AWS account:**
-   Make sure to configure your aws credentials (access key id / secret key ) uisng aws cli with `aws configure`
+   Make sure to configure your aws credentials (access key id / secret key ) using aws cli with `aws configure`
    
    ```bash
    npx cdk bootstrap
@@ -173,7 +211,7 @@ AWS CDK needs a GitHub token to create webhooks for the repositories.
    npx cdk deploy
    ```
 
-### 5. Monitor Deployment
+### 6. Monitor Deployment
 
 Once deployment starts, you can monitor the pipeline progress in your AWS account:
 - Navigate to [AWS CodePipeline Console](https://us-east-1.console.aws.amazon.com/codesuite/codepipeline/pipelines/application-name/view?region=us-east-1&stage=Build&tab=visualization)
@@ -215,6 +253,83 @@ environmentVariables: {
   // Add your application-specific variables
 }
 ```
+
+### Service Build Configuration
+
+The application uses a centralized service build configuration in `application-config.ts`:
+
+```typescript
+serviceBuildConfig: {
+    repositoryName: 'your-service-repo',
+    sourceDirectory: 'your-service-repo',
+    ecrRepositoryName: 'your-service-repo',
+    dockerfilePath: 'Dockerfile',
+    buildCommands: [
+        'npm ci',
+        'NODE_ENV=production npm run build'
+    ],
+    dockerBuildArgs: {
+        NODE_ENV: 'production',
+        NEXT_TELEMETRY_DISABLED: '1'
+    }
+}
+```
+
+**Build Overrides per Environment:**
+Each environment can override build settings:
+
+```typescript
+buildOverrides: {
+    dockerBuildArgs: {
+        NODE_ENV: 'production',
+        NEXT_PUBLIC_ENV: 'beta'
+    },
+    buildCommands: [
+        'npm ci',
+        'NODE_ENV=production npm run build'
+    ]
+}
+```
+
+### Resource Names Configuration
+
+Resource names are now defined per environment in the environment configuration:
+
+```typescript
+resourceNames: {
+    ecrRepositoryName: 'my-app',
+    clusterName: 'my-app-cluster',
+    serviceName: 'my-app-service',
+    taskDefinitionFamily: 'my-app-task-definition-family',
+    albName: 'my-app-alb',
+    targetGroupName: 'my-app-tg',
+    logGroupName: '/aws/ecs/my-app',
+    albSecurityGroupName: 'my-app-alb-sg',
+    ecsSecurityGroupName: 'my-app-ecs-sg'
+}
+```
+
+### Secrets Management
+
+The application supports secure loading of sensitive environment variables from AWS Secrets Manager:
+
+```typescript
+secretsConfig: {
+    environmentKeys: [
+        'DATABASE_PASSWORD',
+        'API_KEY',
+        'JWT_SECRET'
+    ],
+    secretName: 'application/beta/secrets',
+    secretArn: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:application/beta/secrets-XXXXXX'
+}
+```
+
+**Setup Process:**
+1. Create a secret in AWS Secrets Manager with key-value pairs
+2. Copy the secret ARN and update it in your environment config
+3. List all required keys in the `environmentKeys` array
+4. Keys will be automatically loaded as environment variables during deployment
 
 ### Validation and Error Handling
 

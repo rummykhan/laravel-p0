@@ -94,6 +94,8 @@ export interface EnvironmentConfig {
 export interface EnvironmentServiceConfig {
   serviceName: string;
 
+  domainConfig: DomainConfig;
+
   /** Build configuration overrides for this environment */
   buildOverrides?: {
     /** Docker build arguments specific to this environment */
@@ -119,6 +121,15 @@ export interface EnvironmentServiceConfig {
   secretsConfig?: SecretsConfig;
 
   resourceNames: ResourceNames;
+}
+
+/**
+ * Service domain config.
+ */
+export interface DomainConfig {
+  hostedZoneId: string;
+  domainName: string;
+  createCertificates: boolean;
 }
 
 /**

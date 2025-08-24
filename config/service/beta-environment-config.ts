@@ -7,6 +7,13 @@ const APP_NAME = SERVICE_REPO_NAME;
 
 export default {
     serviceName: `METACAPIWebService`,
+    
+    domainConfig: {
+        hostedZoneId: `Z09225873K47ZE52T0G6T`,
+        domainName: `meta-capi.manzoorr.people.amazon.dev`,
+        createCertificates: true,
+    },
+    
     /** Beta-specific build configuration overrides */
     buildOverrides: {
         dockerBuildArgs: {
