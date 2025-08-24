@@ -105,6 +105,15 @@ export const ENVIRONMENT_CONFIGS: Record<string, EnvironmentConfig> = {
       enableDetailedMonitoring: true,
       enableXRayTracing: false, // Disabled for cost optimization
       enableContainerInsights: true,
+    },
+
+    /** Secrets Manager configuration for prod environment */
+    secretsConfig: {
+      environmentKeys: [
+        `TEST_KEY`
+      ],
+      secretName: 'application/beta/secrets',
+      secretArn: `arn:aws:secretsmanager:us-east-1:713505378742:secret:application/beta/secrets-LzUdwZ`
     }
   },
 
@@ -183,6 +192,14 @@ export const ENVIRONMENT_CONFIGS: Record<string, EnvironmentConfig> = {
       enableDetailedMonitoring: true,
       enableXRayTracing: true, // Enabled for pre-production testing
       enableContainerInsights: true,
+    },
+
+    /** Secrets Manager configuration for prod environment */
+    secretsConfig: {
+      environmentKeys: [
+      ],
+      secretName: 'application/gamma/secrets',
+      secretArn: `PROD-ARN-HERE`
     }
   },
 
@@ -261,6 +278,14 @@ export const ENVIRONMENT_CONFIGS: Record<string, EnvironmentConfig> = {
       enableDetailedMonitoring: true,
       enableXRayTracing: true,
       enableContainerInsights: true,
+    },
+
+    /** Secrets Manager configuration for prod environment */
+    secretsConfig: {
+      environmentKeys: [
+      ],
+      secretName: 'application/prod/secrets',
+      secretArn: `PROD-ARN-HERE`
     }
   },
 };

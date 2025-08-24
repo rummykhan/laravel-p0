@@ -7,10 +7,10 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 
 import { validateEnvironmentConfig } from '../../config/deployment-config';
-import { ApplicationConfig, EnvironmentConfig } from '../types/configuration-types';
-import { Stage } from '../../config/types';
+import { ApplicationConfig, EnvironmentConfig, SecretsConfig } from '../types/configuration-types';
 
 export interface EcsStackProps extends cdk.StackProps {
     environmentConfig: EnvironmentConfig;
@@ -34,6 +34,7 @@ export class EcsStack extends cdk.Stack {
     public readonly taskRole: iam.Role;
     public readonly ecsService: ecs.FargateService;
     public readonly scalableTarget: ecs.ScalableTaskCount;
+    public readonly secret?: secretsmanager.ISecret;
 
 
     constructor(scope: Construct, id: string, props: EcsStackProps) {
@@ -369,6 +370,32 @@ export class EcsStack extends cdk.Stack {
             }),
         });
 
+        // Handle Secrets Manager integration if configured
+        if (environmentConfig.secretsConfig) {
+            const secretArn = environmentConfig.secretsConfig.secretArn;
+
+            this.secret = secretsmanager.Secret.fromSecretCompleteArn(
+                this,
+                environmentConfig.secretsConfig.secretName,
+                secretArn
+            );
+
+            // Step 3: Add Secrets Manager permissions to task execution role
+            this.addSecretsManagerPermissions(this.secret, appConfig.applicationName, stage);
+
+            // Step 4: Prepare environment variables for conflict checking
+            const containerEnvironmentVars = {
+                ...ecsConfig.environmentVariables,
+                DEPLOYMENT_STAGE: stage.toLowerCase(),
+                DEPLOYMENT_TIMESTAMP: new Date().toISOString(),
+                DEPLOYMENT_REGION: (props.env?.region as string).toLowerCase(),
+            };
+
+            // Step 5: Add secrets to container definition with enhanced error handling
+            this.addSecretsToContainer(container, this.secret, environmentConfig.secretsConfig);
+
+        }
+
         // VPC-related outputs are now managed by VpcStack
 
         new cdk.CfnOutput(this, 'ClusterArn', {
@@ -442,6 +469,21 @@ export class EcsStack extends cdk.Stack {
             description: 'ECS Task Role ARN',
             exportName: `${this.stackName}-TaskRoleArn`,
         });
+
+        // Add Secrets Manager outputs if secret is created
+        if (this.secret) {
+            new cdk.CfnOutput(this, 'SecretArn', {
+                value: this.secret.secretArn,
+                description: 'Secrets Manager Secret ARN',
+                exportName: `${this.stackName}-SecretArn`,
+            });
+
+            new cdk.CfnOutput(this, 'SecretName', {
+                value: this.secret.secretName,
+                description: 'Secrets Manager Secret Name',
+                exportName: `${this.stackName}-SecretName`,
+            });
+        }
 
         // VPC endpoint outputs are now managed by VpcStack
 
@@ -853,6 +895,87 @@ fields @timestamp, @message
             value: `https://${this.region}.console.aws.amazon.com/cloudwatch/home?region=${this.region}#dashboards:name=${dashboard.dashboardName}`,
             description: 'CloudWatch Dashboard URL for Service Health',
             exportName: `${this.stackName}-DashboardUrl`,
+        });
+    }
+
+    /**
+     * Adds Secrets Manager permissions to the task execution role.
+     * Implements least-privilege access by granting permissions only to environment-specific secrets.
+     * 
+     * @param secret - The Secrets Manager secret to grant access to
+     * @param applicationName - The application name for resource scoping
+     * @param stage - The deployment stage for resource scoping
+     */
+    private addSecretsManagerPermissions(
+        secret: secretsmanager.ISecret,
+        applicationName: string,
+        stage: string
+    ): void {
+        // Add Secrets Manager permissions to task execution role with least privilege
+        this.taskExecutionRole.addToPolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: [
+                    'secretsmanager:GetSecretValue',
+                ],
+                resources: [
+                    secret.secretArn,
+                    // Include versioned secret ARN pattern for secret rotation support
+                    `${secret.secretArn}:*`,
+                ],
+                conditions: {
+                    // Additional security condition to ensure access is limited to this application/stage
+                    StringEquals: {
+                        'secretsmanager:ResourceTag/Application': applicationName,
+                        'secretsmanager:ResourceTag/Stage': stage,
+                    },
+                },
+            })
+        );
+
+        // Add KMS permissions if the secret uses a customer-managed KMS key
+        // This is conditional and only added if the secret uses KMS encryption
+        if (secret.encryptionKey) {
+            this.taskExecutionRole.addToPolicy(
+                new iam.PolicyStatement({
+                    effect: iam.Effect.ALLOW,
+                    actions: [
+                        'kms:Decrypt',
+                        'kms:DescribeKey',
+                    ],
+                    resources: [secret.encryptionKey.keyArn],
+                    conditions: {
+                        StringEquals: {
+                            'kms:ViaService': `secretsmanager.${this.region}.amazonaws.com`,
+                        },
+                    },
+                })
+            );
+        }
+    }
+
+    /**
+     * Adds secrets to container definition using ECS native secrets support.
+     * Each secret key-value pair is injected as a separate environment variable.
+     * 
+     * @param container - The ECS container definition to add secrets to
+     * @param secret - The Secrets Manager secret containing the JSON payload
+     * @param secretsConfig - The secrets configuration with key-value pairs
+     * @param existingEnvVars - The existing environment variables to check for conflicts
+     * @throws Error if secret configuration is invalid or contains conflicting keys
+     */
+    private addSecretsToContainer(
+        container: ecs.ContainerDefinition,
+        secret: secretsmanager.ISecret,
+        secretsConfig: SecretsConfig,
+    ): void {
+        const secretKeys = secretsConfig.environmentKeys;
+
+        // Add each secret key as a separate environment variable using ECS secrets support
+        secretKeys.forEach(secretKey => {
+            // Add secret to container using ECS native secrets support
+            // Each key in the JSON secret becomes a separate environment variable
+            container.addSecret(secretKey, ecs.Secret.fromSecretsManager(secret, secretKey));
         });
     }
 }

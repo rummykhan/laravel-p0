@@ -57,6 +57,21 @@ export interface ApplicationConfig {
 }
 
 /**
+ * Secrets Manager configuration interface for managing sensitive environment variables.
+ * Secrets are stored as JSON objects in AWS Secrets Manager and injected into ECS tasks.
+ */
+export interface SecretsConfig {
+  /** Environment-specific secrets keys, this will be injected as env variables */
+  environmentKeys: string[];
+
+  /** Custom secret name override (optional) */
+  secretName: string;
+
+  /** Custom secret name override (optional) */
+  secretArn: string;
+}
+
+/**
  * Environment-specific configuration interface containing all environment-level
  * settings including deployment, infrastructure, and application overrides.
  */
@@ -87,6 +102,9 @@ export interface EnvironmentConfig {
     /** Enable ECS Container Insights */
     enableContainerInsights: boolean;
   };
+
+  /** Secrets Manager configuration for this environment */
+  secretsConfig?: SecretsConfig;
 }
 
 /**
