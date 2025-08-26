@@ -1,5 +1,5 @@
 import { ACCOUNTS_BY_STAGE } from "./account-config"
-import { CDK_APP_REPOSITORY, SERVICE_REPO_NAME, USERS_WEB_APP_REPOSITORY } from "./packages";
+import { CDK_APP_REPOSITORY, SERVICE_REPO_NAME, USERS_WEB_APP_REPOSITORY, ADMINS_WEB_APP_REPOSITORY, ADMIN_REPO_NAME } from "./packages";
 
 /**
  * Default Application Configuration
@@ -32,7 +32,8 @@ const APPLICATION_CONFIG: ApplicationConfig = {
   
   repositories: {
     infra: CDK_APP_REPOSITORY,
-    service: USERS_WEB_APP_REPOSITORY
+    service: USERS_WEB_APP_REPOSITORY,
+    admin: ADMINS_WEB_APP_REPOSITORY,
   },
 
   serviceBuildConfig: {
@@ -41,6 +42,27 @@ const APPLICATION_CONFIG: ApplicationConfig = {
     sourceDirectory: APP_NAME,
     
     ecrRepositoryName: APP_NAME,
+    
+    dockerfilePath: 'Dockerfile',
+
+    buildCommands: [
+      'npm ci',
+      'NODE_ENV=production npm run build'
+    ],
+
+    dockerBuildArgs: {
+      NODE_ENV: 'production',
+      NEXT_TELEMETRY_DISABLED: '1'
+    }
+
+  },
+
+  adminBuildConfig: {
+    repositoryName: ADMIN_REPO_NAME,
+    
+    sourceDirectory: ADMIN_REPO_NAME,
+    
+    ecrRepositoryName: ADMIN_REPO_NAME,
     
     dockerfilePath: 'Dockerfile',
 

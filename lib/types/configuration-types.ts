@@ -34,9 +34,11 @@ export interface ApplicationConfig {
   repositories: {
     infra: Repository;
     service: Repository;
+    admin: Repository;
   };
 
   serviceBuildConfig: BuildConfig;
+  adminBuildConfig: BuildConfig;
 }
 
 /**
@@ -89,6 +91,7 @@ export interface EnvironmentConfig {
   applicationOverrides?: Partial<Omit<ApplicationConfig, 'resolvedStage' | 'resourceNames'>>;
 
   serviceConfig: EnvironmentServiceConfig;
+  adminConfig: EnvironmentServiceConfig;
 }
 
 export interface EnvironmentServiceConfig {

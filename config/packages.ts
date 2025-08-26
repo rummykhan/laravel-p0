@@ -8,6 +8,7 @@ export interface Repository {
 const OWNER = `clickpattern-dev`;
 export const INFRA_REPO_NAME = `meta-capi-cdk`;
 export const SERVICE_REPO_NAME = `meta-capi-web`;
+export const ADMIN_REPO_NAME = `nextjs-admins`;
 
 export const CDK_APP_REPOSITORY: Repository = {
   owner: OWNER,
@@ -21,5 +22,12 @@ export const USERS_WEB_APP_REPOSITORY: Repository = {
   owner: OWNER,
   repository: SERVICE_REPO_NAME,
   repoString: `${OWNER}/${SERVICE_REPO_NAME}`,
+  branch: `main`,
+};
+
+export const ADMINS_WEB_APP_REPOSITORY: Repository = {
+  owner: OWNER,
+  repository: ADMIN_REPO_NAME,
+  repoString: `${OWNER}/${ADMIN_REPO_NAME}`,
   branch: `main`,
 };

@@ -14,7 +14,8 @@
 import * as cdk from 'aws-cdk-lib';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { EnvironmentConfig } from '../lib/types/configuration-types';
-import serviceBetaEnvironmentConfig from './service/beta-environment-config';
+import serviceConfig from './service/beta-environment-config';
+import adminConfig from './admin/beta-environment-config';
 
 /**
  * Environment-specific configurations record containing all settings for each
@@ -37,7 +38,8 @@ export const ENVIRONMENT_CONFIGS: Record<string, EnvironmentConfig> = {
       // or have specific configuration needs
     },
 
-    serviceConfig: serviceBetaEnvironmentConfig
+    serviceConfig,
+    adminConfig,
   }
 };
 

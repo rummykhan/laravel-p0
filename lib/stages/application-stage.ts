@@ -51,6 +51,15 @@ export class ApplicationStage extends cdk.Stage {
       environmentConfig: environmentConfig.serviceConfig, // Pass full environment configuration to ECS stack
     });
 
+    // Create AdminEcsStack for containerized application deployment with resolved configuration
+    // this.ecsStack = new EcsStack(this, `AdminEcsStack`, {
+    //   ...props,
+    //   description: `ECS Fargate stack for Service`,
+    //   stage: stage, // Use base stage for configuration
+    //   vpc: this.vpcStack.vpc, // Pass VPC from VPC stack
+    //   environmentConfig: environmentConfig.adminConfig, // Pass full environment configuration to ECS stack
+    // });
+
     // Add stage-specific tags to all resources in this stage
     cdk.Tags.of(this).add('Stage', fullStageName); // Use full stage name for tagging
     cdk.Tags.of(this).add('Application', applicationConfig.applicationName);
